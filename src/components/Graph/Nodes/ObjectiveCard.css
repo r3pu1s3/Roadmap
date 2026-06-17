@@ -1,0 +1,37 @@
+.objective-card {
+  position: absolute;
+  bottom: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  min-width: 200px;
+  z-index: 10;
+  font-size: 14px;
+}
+
+.card-field {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.card-field:last-child {
+  margin-bottom: 0;
+}
+
+.card-label {
+  font-weight: 600;
+  color: #374151;
+  margin-right: 8px;
+}
+
+.card-value {
+  color: #6b7280;
+  word-break: break-word;
+  max-width: 120px;
+  text-align: right;
+}

@@ -1,0 +1,27 @@
+.obj-node {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+}
+
+.obj-circle {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background-color: #3a4a52;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.obj-circle-completed {
+  background-color: #22c55e;
+}
+
+.obj-circle-incomplete {
+  background-color: #ef4444;
+}
+
+.obj-circle-unknown {
+  background-color: #9ca3af;
+}
