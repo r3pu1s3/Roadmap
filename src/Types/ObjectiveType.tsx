@@ -14,7 +14,7 @@ export enum ObjectiveStatus {
 export type Objective = {
   description: string;
   id: number;
-  subObjective: number[];
+  subObjectives: Objective[];
   deadline: Date;
   repeatDuration?: RepeatDuration;
   endDate?: Date;
@@ -25,6 +25,7 @@ export type Objective = {
   status: ObjectiveStatus;
 };
 
+// DEPRECATED
 export type ObjectiveNode = {
   description: string;
   id: number;

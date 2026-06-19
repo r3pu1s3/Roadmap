@@ -1,8 +1,8 @@
 import { Handle, Position } from '@xyflow/react';;
 import './Node.css';
-import { type ObjectiveNode, ObjectiveStatus } from '../../../Types/ObjectiveType';
+import { type Objective, ObjectiveStatus } from '../../../Types/ObjectiveType';
 import { useState } from 'react';
-import ObjectiveCard from './ObjectiveCard';
+import ObjectiveCard from '../../UI/Objective/ObjectiveCard';
 
 const STATUS_CYCLE = [
   ObjectiveStatus.Completed,
@@ -10,7 +10,7 @@ const STATUS_CYCLE = [
   ObjectiveStatus.Unknown,
 ];
 
-export default function Objective({ data }: { data: ObjectiveNode }) {
+export default function Objective({ data }: { data: Objective }) {
   const initialStatusIndex = STATUS_CYCLE.indexOf(data.status || ObjectiveStatus.Unknown);
   const [statusIndex, setStatusIndex] = useState(initialStatusIndex >= 0 ? initialStatusIndex : 2);
   const [isHovering, setIsHovering] = useState(false);
@@ -30,9 +30,6 @@ export default function Objective({ data }: { data: ObjectiveNode }) {
     }
   };
 
-  const handleCircleClick = () => {
-    setStatusIndex((prevIndex) => (prevIndex + 1) % STATUS_CYCLE.length);
-  };
 
   return (
     <div 
@@ -44,7 +41,6 @@ export default function Objective({ data }: { data: ObjectiveNode }) {
       <Handle type="target" position={Position.Top} />
       <div 
         className={`obj-circle ${getStatusClass()}`} 
-        onClick={handleCircleClick} 
         style={{ cursor: 'pointer' }} 
       />
       <Handle type="source" position={Position.Bottom} />

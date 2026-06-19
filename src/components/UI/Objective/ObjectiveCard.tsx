@@ -1,7 +1,7 @@
 import './ObjectiveCard.css';
-import { type ObjectiveNode } from '../../../Types/ObjectiveType';
+import { type Objective } from '../../../Types/ObjectiveType';
 
-export default function ObjectiveCard({ data }: { data: ObjectiveNode }) {
+export default function ObjectiveCard({ data }: { data: Objective }) {
   return (
     <div className="objective-card">
       <div className="card-field">
