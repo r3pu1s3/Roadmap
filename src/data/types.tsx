@@ -1,34 +1,54 @@
-type GoalID = number
+// more general types for refactoring
+type Update<T> = (prop: T) => void;
+type Get<T> = () => T
+interface Updatable<T> { 
+    prop: T;
+    update: Update<T>;
+    get: Get<T>;
+}
 
-interface Goal {
+type Add<T> = (prop: T) =>void;
+type Remove<T> = (prop:T) => void;
+
+interface Interative_list<T> {
+    prop: T[];
+    add_prop: Add<T>;
+    remove_prop: Remove<number>;
+}
+
+// may not work
+type Is<T> = (para?: T)=> Boolean;
+
+type ID = number;
+
+interface Steppable<T>{
+    step: (complete:Boolean, excess:Boolean)=>T;
+}
+
+// goal types
+type GoalID = ID
+interface Goal extends Steppable<Goal>{
     goalID: GoalID;
-    description: string;
-    isComplete: Boolean;
-    parent: Goal | undefined;
-    children: Goal[];
-    excess: Boolean;
+    description: Updatable<String>;
+    isComplete: Updatable<Boolean>;
+    parent: Updatable<Goal> | undefined;
+    children: Interative_list<Goal>;
+    excess: Updatable<Boolean>;
 
     deadline: Deadline | undefined;
     counters?: Record<string, Counter>;
     Reward: Reward;
     // may have to return previous instance of prop for log
-    update_description: (new_description: string) => void;
     // goal's step function
-    toggle_complete: ()=> Boolean;
-    update_parent: (new_parent: GoalID) => void;
-    add_child: (child: GoalID) => void;
-    remove_child: (child: GoalID) => void;
     // may not be needed
-    isLeaf: ()=> Boolean;
+    is_leaf: Is<null>;
 }
 
 // simple rule with a simple step function that utlizes the complete/incomplete modifiers
-interface Dynamic_Rule<T, V> {
-    property: T;
-    complete_incomplete_modifiers: [V, V];
-    step: (complete: Boolean, excess: Boolean) => T;
-    update_prop: (new_value: T) => void;
-    update_modifier: (complete: V, incomplete: V) => void;
+interface Dynamic_Rule<T, V> extends Steppable<T>{
+    property: Updatable<T>;
+    complete_modifiers: Updatable<V>;
+    incomplete_modifier: Updatable<V>;
 }
 
 enum Gap {
@@ -40,17 +60,13 @@ enum Gap {
 }
 
 interface Deadline extends Dynamic_Rule<Date, Gap>{
-    final_deadline: Date;
-    update_final: (new_final: Date) => void;
-    is_retired: ()=>Boolean;
-
+    final_deadline: Updatable<Date>;
+    is_retired: Is<null>;
 }
 
-// may need to optimize later
 interface Counter extends Dynamic_Rule<number, number>{
-    min_max: [number, number];
-    // may want to separate
-    update_min_max: (min: number, max: number) => void;
+    min: Updatable<number>;
+    max: Updatable<number>
 }
 
 
@@ -63,37 +79,81 @@ interface Reward extends Dynamic_Rule<number, number>{
 
 type streak = 1 | 2 | 3 | 4 | 5;
 // could make multiplier dependent on completion rate, min is always 0
-interface Multiplier extends Dynamic_Rule<streak, null>{
+interface Multiplier extends Dynamic_Rule<streak, number>{
 
 }
 
 
-type BlockID = number;
-interface Block{
+
+type TemplateID = ID;
+interface Template{
+    name: Updatable<string>;
+    templateID: TemplateID;
+}
+
+interface Empty_Block{
+    duration: number;
+}
+
+type Block_TemplateID = TemplateID
+interface Block_Template extends Template, Empty_Block, Steppable<Block_Template>{
     // may need to furthur restrict number from 0-24 or just do checks later
-    blockID: BlockID;
-    interval: [number, number];
-    goals: GoalID[];
+    templateID: Block_TemplateID
+    goals: Interative_list<GoalID>;
+    
     multiplier: Multiplier;
-    change_beginning: (b: number)=>void;
-    change_ending: (e: number) => void;
-    add_goal: (goal: GoalID)=>void;
-    remove_goal: (goal: GoalID)=>void;
+    update_duration: Update<number>;
+
 }
 
-interface Schedule{
-    blocks: BlockID[];
-    swap: (id1: number, id2: number) => void;
-    add_block: (id:number, block: BlockID)=>void;
-    remove_block:(id: number) => BlockID;
+type ScheduleID = TemplateID
+interface Schedule_Template extends Template{
+    templateID: ScheduleID;
+    // may have to fix
+    block_list: Interative_list<Block_Template | Empty_Block>;
+    swap: (idx1: number, idx2: number) => void;
+    schedule: (start:Date) => Block[]
+}
+
+type SchedulableID = ID;
+interface Schedulable{
+    // may not be a good idea
+    schedulableID: SchedulableID;
+    start_end: Updatable<[number, number]>;
+
+}
+interface Block extends Schedulable{
+    reference_template: Updatable<Block_Template>;
+    task_list: Interative_list<Goal>;
+    is_active: Is<Date>;
+    
 }
 
 
+
+// the doers or simulators of the object
+// in charge of scheduling a template onto a "calendar," keep track of dynamic states, and allow user to complete tasks
 interface Planner{
+    // previous instance of Date
     time: Date
+    // pseudo calendar
+    calendar: Block[];
+    goal_trees: Goal[];
+    
+    // each check of time, planner should check goals referenced in block and step each goal
+    // also check block template 
+    update: ()=>void;
+
 }
 
 /*
+
+
+7/29
+need to fix general type Is and check if general type is too restrictive or not
+need to double check types
+need to plan out planner, logs, and loggers
+
 7/28
 Need to do final check-up of types
 still iffy on multiplier and reward as dynamic rule and their design
