@@ -24,8 +24,13 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+/src/generated/prisma
+
+
 .agents
 .claude
 .windsurf
+
 
 src/generated/prisma

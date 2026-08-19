@@ -1,0 +1,26 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  
+}
+
+model GoalTemplate {
+  id           Int      @id @default(autoincrement())
+  description  String
+  parentId     Int?
+  rewardRule   Int[]
+  deadlineRule Int[]
+
+  parent   GoalTemplate?  @relation("GoalTemplateHierarchy", fields: [parentId], references: [id])
+  children GoalTemplate[] @relation("GoalTemplateHierarchy")
+  counters String[]
+}
