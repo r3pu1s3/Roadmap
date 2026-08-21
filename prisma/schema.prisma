@@ -13,14 +13,24 @@ datasource db {
   
 }
 
-model GoalTemplate {
-  id           Int      @id @default(autoincrement())
+model GoalNode {
+  id           Int           @id @default(autoincrement())
   description  String
   parentId     Int?
   rewardRule   Int[]
   deadlineRule Int[]
+  completed    Boolean       @default(false)
+  deadline     DateTime
+  counters     GoalCounter[]
 
-  parent   GoalTemplate?  @relation("GoalTemplateHierarchy", fields: [parentId], references: [id])
-  children GoalTemplate[] @relation("GoalTemplateHierarchy")
-  counters String[]
+  parent   GoalNode?  @relation("GoalNodeHierarchy", fields: [parentId], references: [id])
+  children GoalNode[] @relation("GoalNodeHierarchy")
+}
+
+model GoalCounter {
+  id             Int      @id @default(autoincrement())
+  label          String   // e.g. "pushups"
+  targetQuantity Int      // goal amount, e.g. 3
+  goalNodeId     Int
+  goalNode       GoalNode @relation(fields: [goalNodeId], references: [id])
 }

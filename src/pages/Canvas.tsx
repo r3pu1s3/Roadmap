@@ -1,135 +1,149 @@
-import { ReactFlow, Background, Controls, useReactFlow, useNodesState, useEdgesState, ReactFlowProvider, MarkerType } from '@xyflow/react';
+import { useCallback, useState } from 'react';
+import {
+  ReactFlow,
+  ReactFlowProvider,
+  Background,
+  Controls,
+  useReactFlow,
+  applyNodeChanges,
+  type Node,
+  type NodeChange,
+  type MouseEvent as ReactFlowMouseEvent,
+} from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { useState, useCallback, useRef } from 'react';
-import ObjectiveNode from '../components/Graph/Nodes/ObjectiveNode';
-import { type Objective,  ObjectiveStatus } from '../Types/ObjectiveType';
+import GoalNode from '../components/GoalNode';
+import GoalNodeFormSidebar, { type GoalNodeFormData } from '../components/GoalNodeSideBar';
+import { createGoalNode } from '../api/GoalNodeAPI';
 
-const testObjectives: ObjectiveNode[] = [
-  {
-    description: 'Completed Objective',
-    id: 1,
-    subObjectives: [],
-    deadline: new Date('2026-12-31'),
-    status: ObjectiveStatus.Completed,
-    
-  },
-  {
-    description: 'Incomplete Objective',
-    subObjectives: [],
-    id: 2,
-    deadline: new Date('2026-12-31'),
-    status: ObjectiveStatus.Incomplete,
-  },
-  {
-    description: 'Unknown Objective',
-    subObjectives: [],
-    id: 3,
-    deadline: new Date('2026-12-31'),
-    status: ObjectiveStatus.Unknown,
-  },
-];
+const nodeTypes = { goalNode: GoalNode };
 
-const initialNodes = testObjectives.map((obj, index) => ({
-  id: `${obj.id}`,
-  type: 'obj',
-  data: obj,
-  position: { x: index * 150, y: 0 },
-}));
+let nextId = 1;
 
-const initialEdges = [];
+function Canvas() {
+  const [nodes, setNodes] = useState<Node[]>([]);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [pendingNodeId, setPendingNodeId] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const { screenToFlowPosition } = useReactFlow();
 
-const nodeTypes = {
-    obj: ObjectiveNode
-}
+  const handleNodesChange = useCallback((changes: NodeChange[]) => {
+    setNodes((prev) => applyNodeChanges(changes, prev));
+  }, []);
 
+  const handlePaneClick = useCallback(
+    (event: ReactFlowMouseEvent) => {
+      if (isFormOpen) return;
 
-// later should take in initial nodes and edges from a json and appropriate width and height of viewport
-function Flow() {
-    
-    
-    const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
-    const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
-    const [nodeCount, setNodeCount] = useState(nodes.length+1)
+      const position = screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      });
 
-    const connectingRef = useRef(false)
+      const id = String(nextId++);
+      const newNode: Node = {
+        id,
+        type: 'goalNode',
+        position,
+        data: {},
+      };
 
+      setNodes((prev) => [...prev, newNode]);
+      setPendingNodeId(id);
+      setIsFormOpen(true);
+      setSaveError(null);
+    },
+    [isFormOpen, screenToFlowPosition]
+  );
 
-    const onConnect = useCallback((connection) => {
-        // console.log(connection)
-        const newEdge = {
-            id: connection.source + "->" + connection.target,
-            source: connection.source,
-            target: connection.target
-        }
-        setEdges((eds) => [...eds, newEdge])
-        
-        setNodes((currentNodes) =>{
-            const sourceNode = currentNodes.find(n=>n.id===connection.source)
-            const targetNode = currentNodes.find(n=>n.id === connection.target)
-            console.log(sourceNode)
-            if (sourceNode && targetNode) {
-                sourceNode.data.subObjectives = [...sourceNode.data.subObjectives, targetNode]
-            }
-            return currentNodes
-        })
-    
-    }, [setEdges, setNodes])
-
-    
-    const onConnectStart = useCallback(() => {
-        connectingRef.current = true
-    }, [])
-
-    const onConnectEnd = useCallback(() => {
-        // Small delay so onPaneClick fires after this flag is set
-        setTimeout(() => {
-        connectingRef.current = false
-        }, 100)
-    }, [])
-
-    const reactFlowInstance = useReactFlow();
-    
-    const onCanvasClick = (event) => {
-        if (connectingRef.current) return
-
-
-        const position = reactFlowInstance.screenToFlowPosition({x: event.clientX, y: event.clientY})
-        // console.log(position)
-        
-
-        // Create a new node
-        const newNode = {
-            id: `${nodeCount}`,
-            type: 'obj',
-            data: {description: "default", id:`${nodeCount}`,  subObjectives: [], deadline: new Date(), status: ObjectiveStatus.Unknown},
-            position: position,
-        }
-        
-
-        setNodes((nds) => [...nds, newNode])
-        // console.log(nodes)
-        setNodeCount(nodeCount + 1)
+  const handleFormClose = useCallback(() => {
+    // User cancelled — remove the placeholder node since it was never saved.
+    if (pendingNodeId) {
+      setNodes((prev) => prev.filter((n) => n.id !== pendingNodeId));
     }
+    setPendingNodeId(null);
+    setIsFormOpen(false);
+    setSaveError(null);
+  }, [pendingNodeId]);
 
+  const handleFormSubmit = useCallback(
+    async (formData: GoalNodeFormData) => {
+      if (!pendingNodeId) return;
 
-   
+      setIsSaving(true);
+      setSaveError(null);
 
-    return (
-    <div style={{ height: '100vh', width: '100vw' }}>
-        <ReactFlow nodes = {nodes} nodeTypes={nodeTypes} edges={edges} defaultEdgeOptions={{markerEnd: {type: MarkerType.ArrowClosed}}} onNodesChange={onNodesChange} onEdgesChange = {onEdgesChange} onConnect={onConnect} onConnectStart={onConnectStart} onConnectEnd={onConnectEnd} onPaneClick={onCanvasClick} fitView>
+      // Only send counters the user actually filled in a label for —
+      // the 3 boxes are optional and mostly start empty.
+      const counters = formData.counters
+        .filter((c) => c.label.trim().length > 0)
+        .map((c) => ({ label: c.label.trim(), targetQuantity: c.targetQuantity }));
+
+      try {
+        const created = await createGoalNode({
+          description: formData.description,
+          rewardRule: formData.rewardRule,
+          deadlineRule: formData.deadlineRule,
+          // The date input gives "yyyy-mm-dd" — convert to a full ISO
+          // timestamp the backend's Date parsing expects.
+          deadline: new Date(formData.deadline).toISOString(),
+          counters: counters.length > 0 ? counters : undefined,
+        });
+
+        // Swap the local placeholder node's data for the real, saved
+        // record, and tag it with the database id for future PATCH/DELETE calls.
+        setNodes((prev) =>
+          prev.map((n) =>
+            n.id === pendingNodeId
+              ? { ...n, data: { ...created, dbId: created.id } }
+              : n
+          )
+        );
+
+        setPendingNodeId(null);
+        setIsFormOpen(false);
+      } catch (err) {
+        setSaveError(err instanceof Error ? err.message : 'Failed to save goal node');
+        // Keep the sidebar open on failure so the user can fix input and retry.
+      } finally {
+        setIsSaving(false);
+      }
+    },
+    [pendingNodeId]
+  );
+
+  return (
+    <>
+      <ReactFlow
+        nodes={nodes}
+        edges={[]}
+        nodeTypes={nodeTypes}
+        onNodesChange={handleNodesChange}
+        onPaneClick={handlePaneClick}
+        fitView
+      >
         <Background />
         <Controls />
-        </ReactFlow>
+      </ReactFlow>
+
+      <GoalNodeFormSidebar
+        key={pendingNodeId ?? 'closed'}
+        isOpen={isFormOpen}
+        onClose={handleFormClose}
+        onSubmit={handleFormSubmit}
+        isSaving={isSaving}
+        errorMessage={saveError}
+      />
+    </>
+  );
+}
+
+export default function GoalGraphPage() {
+  return (
+    <div style={{ width: '100vw', height: '100vh' }}>
+      <ReactFlowProvider>
+        <Canvas />
+      </ReactFlowProvider>
     </div>
-    );
+  );
 }
-
-
-function FlowWithProvider(){
-    return (
-        <ReactFlowProvider>
-            <Flow/>
-        </ReactFlowProvider>
-    )    
-}
-export default FlowWithProvider
