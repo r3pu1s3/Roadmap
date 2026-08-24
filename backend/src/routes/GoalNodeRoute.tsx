@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { createGoalNode } from "../controllers/goalNodeController";
+import { createGoalNode } from "../controller/goalNodeController";
 
 const router = Router();
 

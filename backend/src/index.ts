@@ -1,7 +1,9 @@
 import express from "express";
 import goalNodeRoutes from "./routes/GoalNodeRoute";
+import cors from "cors";
 
 const app = express();
+app.use(cors());
 app.use(express.json());
 
 // Mount all goal-node routes. Every route defined in goalNodeRoutes.ts
