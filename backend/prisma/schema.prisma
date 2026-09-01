@@ -13,24 +13,35 @@ datasource db {
   
 }
 
-model GoalNode {
-  id           Int           @id @default(autoincrement())
-  description  String
-  parentId     Int?
-  rewardRule   Int[]
-  deadlineRule Int[]
-  completed    Boolean       @default(false)
-  deadline     DateTime
-  counters     GoalCounter[]
+model Objective {
+  id          Int    @id @default(autoincrement())
+  description String
+  isTask   Boolean
 
-  parent   GoalNode?  @relation("GoalNodeHierarchy", fields: [parentId], references: [id])
-  children GoalNode[] @relation("GoalNodeHierarchy")
+  counter ObjectiveCounter?
+
+  // an Objective can be the "child" side of many edges (multiple parents)...
+  incomingEdges ObjectiveEdge[] @relation("ChildSide")
+  // ...and the "parent" side of many edges (multiple children)
+  outgoingEdges ObjectiveEdge[] @relation("ParentSide")
 }
 
-model GoalCounter {
-  id             Int      @id @default(autoincrement())
-  label          String   // e.g. "pushups"
-  targetQuantity Int      // goal amount, e.g. 3
-  goalNodeId     Int
-  goalNode       GoalNode @relation(fields: [goalNodeId], references: [id])
+model ObjectiveEdge {
+  id       Int @id @default(autoincrement())
+  parentId Int
+  childId  Int
+
+  parent Objective @relation("ParentSide", fields: [parentId], references: [id], onDelete: Cascade)
+  child  Objective @relation("ChildSide", fields: [childId], references: [id], onDelete: Cascade)
+  @@unique([parentId, childId])
+}
+
+model ObjectiveCounter {
+  id             Int       @id @default(autoincrement())
+  label          String    // extracted from description's {placeholders}
+  targetQuantity Int?
+  objectiveId    Int      @unique
+  objective      Objective @relation(fields: [objectiveId], references: [id], onDelete: Cascade)
+
+  @@unique([objectiveId, label]) // one counter per unique placeholder name, per objective
 }

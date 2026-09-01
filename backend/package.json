@@ -14,7 +14,11 @@
     "@prisma/client": "^7.9.1",
     "cors": "^2.8.6",
     "express": "^5.2.1",
-    "pg": "^8.23.0"
+    "jest": "^30.5.0",
+    "jest-mock-extended": "^4.0.1",
+    "pg": "^8.23.0",
+    "ts-jest": "^29.4.12",
+    "vitest-mock-extended": "^5.1.1"
   },
   "devDependencies": {
     "@types/node": "^24.12.3",

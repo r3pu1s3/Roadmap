@@ -1,6 +1,6 @@
 import { Handle, Position } from '@xyflow/react';
 
-export default function GoalNode() {
+export default function Objective() {
   return (
     <div
       style={{

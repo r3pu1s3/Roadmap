@@ -11,9 +11,9 @@ import {
   type MouseEvent as ReactFlowMouseEvent,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import GoalNode from '../components/GoalNode';
-import GoalNodeFormSidebar, { type GoalNodeFormData } from '../components/GoalNodeSideBar';
-import { createGoalNode } from '../api/GoalNodeAPI';
+import GoalNode from '../components/Objective';
+import ObjectiveFormSidebar, { type ObjectiveFormData } from '../components/ObjectiveSidebar';
+import { createGoalNode } from '../api/ObjectiveAPI';
 
 const nodeTypes = { goalNode: GoalNode };
 
@@ -67,7 +67,7 @@ function Canvas() {
   }, [pendingNodeId]);
 
   const handleFormSubmit = useCallback(
-    async (formData: GoalNodeFormData) => {
+    async (formData: ObjectiveFormData) => {
       if (!pendingNodeId) return;
 
       setIsSaving(true);
@@ -75,19 +75,11 @@ function Canvas() {
 
       // Only send counters the user actually filled in a label for —
       // the 3 boxes are optional and mostly start empty.
-      const counters = formData.counters
-        .filter((c) => c.label.trim().length > 0)
-        .map((c) => ({ label: c.label.trim(), targetQuantity: c.targetQuantity }));
 
       try {
         const created = await createGoalNode({
           description: formData.description,
-          rewardRule: formData.rewardRule,
-          deadlineRule: formData.deadlineRule,
-          // The date input gives "yyyy-mm-dd" — convert to a full ISO
-          // timestamp the backend's Date parsing expects.
-          deadline: new Date(formData.deadline).toISOString(),
-          counters: counters.length > 0 ? counters : undefined,
+          isTask: formData.isTask,
         });
 
         // Swap the local placeholder node's data for the real, saved
@@ -126,7 +118,8 @@ function Canvas() {
         <Controls />
       </ReactFlow>
 
-      <GoalNodeFormSidebar
+      {/* may expose form */}
+      <ObjectiveFormSidebar
         key={pendingNodeId ?? 'closed'}
         isOpen={isFormOpen}
         onClose={handleFormClose}

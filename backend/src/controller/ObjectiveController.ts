@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
-import * as goalNodeService from "../service/GoalNodeService";
+import * as objectiveService from "../service/ObjectiveService";
 
-export async function createGoalNode(req: Request, res: Response) {
+export async function createObjective(req: Request, res: Response) {
   try {
     const body = {
       ...req.body,
@@ -10,7 +10,7 @@ export async function createGoalNode(req: Request, res: Response) {
       deadline: req.body.deadline !== undefined ? new Date(req.body.deadline) : undefined,
     };
 
-    const goalNode = await goalNodeService.createGoalNode(body);
+    const goalNode = await objectiveService.createObjective(body);
     res.status(201).json(goalNode);
   } catch (err) {
     if (err instanceof Error) {
