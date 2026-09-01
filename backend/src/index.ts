@@ -1,5 +1,5 @@
 import express from "express";
-import goalNodeRoutes from "./routes/GoalNodeRoute";
+import objectiveRoutes from "./routes/ObjectiveRoute";
 import cors from "cors";
 
 const app = express();
@@ -9,7 +9,7 @@ app.use(express.json());
 // Mount all goal-node routes. Every route defined in goalNodeRoutes.ts
 // becomes live here — e.g. router.post("/goal-nodes", ...) is now
 // reachable at http://localhost:3000/goal-nodes
-app.use(goalNodeRoutes);
+app.use(objectiveRoutes);
 
 const PORT = process.env.PORT ?? 3000;
 app.listen(PORT, () => {

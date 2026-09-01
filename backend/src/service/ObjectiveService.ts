@@ -1,13 +1,5 @@
-import { PrismaClient } from "../generated/prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
-import "dotenv/config";
-import { parseCounterLabels } from "./ObjectiveParser";
 import prisma from "../lib/prisma";
-
-// const adapter = new PrismaPg({
-//   connectionString: process.env.DATABASE_URL!,
-// });
-// const prisma = new PrismaClient({ adapter });
+import { parseCounterLabels } from "./ObjectiveParser";
 
 const DESCRIPTION_WORD_LIMIT = 25;
 
@@ -16,12 +8,13 @@ export interface CreateObjectiveInput {
   isTask: boolean;
 }
 
-export async function createObjective(data: CreateObjectiveInput) {
-  const { description, isTask } = data;
+export interface UpdateObjectiveInput {
+  id: number;
+  description: string;
+  isTask: boolean;
+}
 
-  // --- Validation (business rules Prisma can't enforce) ---
-
-  // description check
+function validateObjectiveInput(description: string, isTask: boolean) {
   if (!description || description.trim().length === 0) {
     throw new Error("description is required");
   }
@@ -36,26 +29,28 @@ export async function createObjective(data: CreateObjectiveInput) {
   if (typeof isTask !== "boolean") {
     throw new Error("isTask must be a boolean");
   }
+}
 
-  // task + counter check
-  let counterLabel: string | null = null;
+function resolveCounterLabel(description: string, isTask: boolean): string | null {
+  if (!isTask) return null;
 
-  if (isTask) {
-    const labels = parseCounterLabels(description);
+  const labels = parseCounterLabels(description);
 
-    if (labels.length > 1) {
-      throw new Error(
-        "There should only be one counter for each objective. Break down the goal if you need to."
-      );
-    }
-
-    if (labels.length === 1) {
-      counterLabel = labels[0];
-    }
-    // labels.length === 0: isTask is true but the description has no
-    // {placeholder} — allowed for now, the objective is just created
-    // without a counter attached. See note below if you'd rather require one.
+  if (labels.length > 1) {
+    throw new Error(
+      "There should only be one counter for each objective. Break down the goal if you need to."
+    );
   }
+
+  return labels.length === 1 ? labels[0] : null;
+}
+
+export async function createObjective(data: CreateObjectiveInput) {
+  const { description, isTask } = data;
+
+  // --- Validation (business rules Prisma can't enforce) ---
+  validateObjectiveInput(description, isTask);
+  const counterLabel = resolveCounterLabel(description, isTask);
 
   // --- Create ---
   return prisma.objective.create({
@@ -66,10 +61,66 @@ export async function createObjective(data: CreateObjectiveInput) {
         ? {
             create: {
               label: counterLabel,
-              targetQuantity: null, // filled in by the user later, e.g. via PATCH
+              targetQuantity: null,
             },
           }
         : undefined,
+    },
+    include: { counter: true },
+  });
+}
+
+export async function updateObjective(data: UpdateObjectiveInput) {
+  const { id, description, isTask } = data;
+
+  // --- Existence check ---
+  const existing = await prisma.objective.findUnique({
+    where: { id },
+    include: { counter: true },
+  });
+  if (!existing) {
+    throw new Error("objective not found");
+  }
+
+  // --- Validation (same checks as createObjective) ---
+  validateObjectiveInput(description, isTask);
+  const counterLabel = resolveCounterLabel(description, isTask);
+
+  // --- Reconcile the counter against whatever it already was ---
+  // Unlike create, an update has to decide what happens to an EXISTING
+  // counter row: keep it, replace it, or remove it — depending on whether
+  // the description's placeholder changed.
+  let counterOperation:
+    | { create: { label: string; targetQuantity: null } }
+    | { update: { label: string; targetQuantity: null } }
+    | { delete: true }
+    | undefined;
+
+  if (counterLabel) {
+    if (!existing.counter) {
+      // No counter existed before — create one.
+      counterOperation = { create: { label: counterLabel, targetQuantity: null } };
+    } else if (existing.counter.label !== counterLabel) {
+      // The placeholder changed (e.g. {pushups} -> {situps}) — the old
+      // targetQuantity no longer means anything, so reset it to null
+      // rather than silently keeping a stale number under a new label.
+      counterOperation = { update: { label: counterLabel, targetQuantity: null } };
+    }
+    // else: label is unchanged — leave the counter (and its
+    // targetQuantity) untouched, don't set counterOperation at all.
+  } else if (existing.counter) {
+    // isTask is now false, or the placeholder was removed from the
+    // description — the objective no longer has anything to count.
+    counterOperation = { delete: true };
+  }
+
+  // --- Update ---
+  return prisma.objective.update({
+    where: { id },
+    data: {
+      description,
+      isTask,
+      counter: counterOperation,
     },
     include: { counter: true },
   });
