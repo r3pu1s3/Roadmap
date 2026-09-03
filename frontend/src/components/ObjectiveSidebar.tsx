@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import './ObjectiveSidebar.css';
+import ObjectiveSidebarShell from './ObjectiveSidebarShell';
 
 export interface ObjectiveFormData {
   isTask: boolean;
@@ -27,8 +27,6 @@ export default function ObjectiveSidebar({
   const [isTask, setIsTask] = useState<boolean | null>(null);
   const [description, setDescription] = useState('');
 
-  if (!isOpen) return null;
-
   function selectType(value: boolean) {
     setIsTask(value);
     setStep('description');
@@ -43,77 +41,55 @@ export default function ObjectiveSidebar({
     onSubmit({ isTask, description });
   }
 
-  return (
-    <div className="obj-form-sidebar">
-      <div className="obj-form-header">
-        <span className="obj-form-title">New {step === 'type' ? 'node' : isTask ? 'task' : 'objective'}</span>
-        <button className="obj-form-close" onClick={onClose} aria-label="Close">
-          ×
-        </button>
-      </div>
+  const title = `New ${step === 'type' ? 'node' : isTask ? 'task' : 'objective'}`;
 
+  return (
+    <ObjectiveSidebarShell
+      isOpen={isOpen}
+      title={title}
+      onClose={onClose}
+      isSaving={isSaving}
+      errorMessage={errorMessage}
+      secondaryLabel={step === 'type' ? 'Cancel' : 'Back'}
+      onSecondaryClick={step === 'type' ? onClose : handleBack}
+      showPrimary={step === 'description'}
+      primaryLabel="Submit"
+      primaryDisabled={description.trim().length === 0}
+      onPrimaryClick={handleSubmit}
+    >
       {step === 'type' && (
-        <div className="obj-form-body">
+        <>
           <label className="obj-form-label">What kind of node is this?</label>
           <div className="obj-form-type-options">
-            <button
-              className="obj-form-type-btn"
-              onClick={() => selectType(false)}
-              autoFocus
-            >
+            <button className="obj-form-type-btn" onClick={() => selectType(false)} autoFocus>
               <span className="obj-form-type-btn-title">Objective</span>
               <span className="obj-form-type-btn-desc">A higher-level goal, no counter attached</span>
             </button>
-            <button
-              className="obj-form-type-btn"
-              onClick={() => selectType(true)}
-            >
+            <button className="obj-form-type-btn" onClick={() => selectType(true)}>
               <span className="obj-form-type-btn-title">Task</span>
-              <span className="obj-form-type-btn-desc">A concrete, countable action (e.g. "{'{pushups}'} pushups")</span>
+              <span className="obj-form-type-btn-desc">
+                A concrete, countable action (e.g. "{'{pushups}'} pushups")
+              </span>
             </button>
           </div>
-        </div>
+        </>
       )}
 
       {step === 'description' && (
-        <div className="obj-form-body">
+        <>
           <label className="obj-form-label">Description</label>
           <textarea
             className="obj-form-textarea"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder={
-              isTask
-                ? 'e.g. Do {pushups} pushups every morning'
-                : 'e.g. Get stronger this year'
+              isTask ? 'e.g. Do {pushups} pushups every morning' : 'e.g. Get stronger this year'
             }
             rows={6}
             autoFocus
           />
-        </div>
+        </>
       )}
-
-      <div className="obj-form-footer">
-        {errorMessage && <div className="obj-form-error">{errorMessage}</div>}
-        <div className="obj-form-footer-buttons">
-          <button
-            className="obj-form-btn obj-form-btn-secondary"
-            onClick={step === 'type' ? onClose : handleBack}
-            disabled={isSaving}
-          >
-            {step === 'type' ? 'Cancel' : 'Back'}
-          </button>
-          {step === 'description' && (
-            <button
-              className="obj-form-btn obj-form-btn-primary"
-              onClick={handleSubmit}
-              disabled={isSaving || description.trim().length === 0}
-            >
-              {isSaving ? 'Saving…' : 'Submit'}
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
+    </ObjectiveSidebarShell>
   );
 }

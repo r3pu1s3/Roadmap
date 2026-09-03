@@ -160,9 +160,3 @@ describe("createObjective", () => {
   });
 });
 
-// test('createUser should return the generated user', async () => {
-//   const newUser = { description: 'test', isTask: true }
-//   prisma.objective.create.mockResolvedValue({ ...newUser, id: 1 }) // 👈🏻 mock the response
-//   const user = await createObjective(newUser)
-//   expect(user).toStrictEqual({ ...newUser, id: 1 })
-// })
