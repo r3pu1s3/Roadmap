@@ -6,26 +6,30 @@ export interface ObjectiveCounterResponse {
 
 export interface ObjectiveResponse {
   id: number;
+  mapId: number;
   description: string;
   isTask: boolean;
   counter: ObjectiveCounterResponse | null;
 }
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000';
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
 
-export async function createGoalNode(payload: {
+export async function createObjective(payload: {
   description: string;
   isTask: boolean;
+  mapId: number;
 }): Promise<ObjectiveResponse> {
   const response = await fetch(`${API_BASE}/objectives`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
 
   if (!response.ok) {
     const errorBody = await response.json().catch(() => ({}));
-    throw new Error(errorBody.error ?? `Failed to create objective (${response.status})`);
+    throw new Error(
+      errorBody.error ?? `Failed to create objective (${response.status})`,
+    );
   }
 
   return response.json();
@@ -33,17 +37,19 @@ export async function createGoalNode(payload: {
 
 export async function updateObjective(
   id: number,
-  payload: { description: string; isTask: boolean }
+  payload: { description: string; isTask: boolean },
 ): Promise<ObjectiveResponse> {
   const response = await fetch(`${API_BASE}/objectives/${id}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
 
   if (!response.ok) {
     const errorBody = await response.json().catch(() => ({}));
-    throw new Error(errorBody.error ?? `Failed to update objective (${response.status})`);
+    throw new Error(
+      errorBody.error ?? `Failed to update objective (${response.status})`,
+    );
   }
 
   return response.json();

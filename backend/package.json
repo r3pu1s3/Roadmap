@@ -7,7 +7,11 @@
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "build": "tsc -b",
-    "test": "vitest"
+    "test": "vitest",
+    "test:unit": "vitest run --exclude \"**/*.e2e.test.ts\"",
+    "lint": "eslint .",
+    "format": "prettier --write . --ignore-path ../.prettierignore",
+    "format:check": "prettier --check . --ignore-path ../.prettierignore"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.9.1",
@@ -21,13 +25,21 @@
     "vitest-mock-extended": "^5.1.1"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
     "@types/node": "^24.12.3",
     "@types/supertest": "^7.2.1",
     "dotenv": "^17.4.2",
+    "eslint": "^10.10.0",
+    "globals": "^17.12.0",
+    "lint-staged": "^17.5.1",
+    "prettier": "^3.9.6",
     "prisma": "^7.9.1",
     "supertest": "^7.2.2",
     "tsx": "^4.23.12",
     "typescript": "~6.0.2",
+    "typescript-eslint": "^8.70.0",
     "vitest": "^4.1.11"
   }
 }
