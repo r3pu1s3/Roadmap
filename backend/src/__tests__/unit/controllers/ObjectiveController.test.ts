@@ -1,18 +1,25 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Request, Response } from "express";
-import { createObjective, updateObjective } from "./ObjectiveController";
-import * as objectiveService from "../service/ObjectiveService";
+import {
+  createObjective,
+  updateObjective,
+} from "../../../controllers/ObjectiveController";
+import * as objectiveService from "../../../services/ObjectiveService";
 
 // Mock the service layer entirely — the controller should never know or
 // care whether the underlying logic succeeds via Prisma, a mock, or
 // anything else. We're only testing HTTP request/response wiring here.
-vi.mock("../service/ObjectiveService", () => ({
+vi.mock("../../../services/ObjectiveService", () => ({
   createObjective: vi.fn(),
   updateObjective: vi.fn(),
 }));
 
 // Helper to build a fake Express Request object with a body and optional params
-function mockRequest(body: unknown, params: Record<string, string> = {}): Request {
+function mockRequest(
+  body: unknown,
+  params: Record<string, string> = {},
+): Request {
   return { body, params } as unknown as Request;
 }
 
@@ -36,9 +43,14 @@ describe("createObjective controller", () => {
       isTask: false,
       counter: null,
     };
-    vi.mocked(objectiveService.createObjective).mockResolvedValue(fakeObjective as any);
+    vi.mocked(objectiveService.createObjective).mockResolvedValue(
+      fakeObjective as any,
+    );
 
-    const req = mockRequest({ description: "Get stronger this year", isTask: false });
+    const req = mockRequest({
+      description: "Get stronger this year",
+      isTask: false,
+    });
     const res = mockResponse();
 
     await createObjective(req, res);
@@ -55,9 +67,14 @@ describe("createObjective controller", () => {
       isTask: true,
       counter: { id: 1, label: "pushups", targetQuantity: null },
     };
-    vi.mocked(objectiveService.createObjective).mockResolvedValue(fakeObjective as any);
+    vi.mocked(objectiveService.createObjective).mockResolvedValue(
+      fakeObjective as any,
+    );
 
-    const req = mockRequest({ description: "Do {pushups} pushups", isTask: true });
+    const req = mockRequest({
+      description: "Do {pushups} pushups",
+      isTask: true,
+    });
     const res = mockResponse();
 
     await createObjective(req, res);
@@ -68,7 +85,7 @@ describe("createObjective controller", () => {
 
   it("returns 400 with the error message when description is missing", async () => {
     vi.mocked(objectiveService.createObjective).mockRejectedValue(
-      new Error("description is required")
+      new Error("description is required"),
     );
 
     const req = mockRequest({ description: "", isTask: false });
@@ -82,7 +99,7 @@ describe("createObjective controller", () => {
 
   it("returns 400 when isTask is not a boolean", async () => {
     vi.mocked(objectiveService.createObjective).mockRejectedValue(
-      new Error("isTask must be a boolean")
+      new Error("isTask must be a boolean"),
     );
 
     const req = mockRequest({ description: "test", isTask: "yes" });
@@ -91,14 +108,16 @@ describe("createObjective controller", () => {
     await createObjective(req, res);
 
     expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json).toHaveBeenCalledWith({ error: "isTask must be a boolean" });
+    expect(res.json).toHaveBeenCalledWith({
+      error: "isTask must be a boolean",
+    });
   });
 
   it("returns 400 when a task description has more than one placeholder", async () => {
     vi.mocked(objectiveService.createObjective).mockRejectedValue(
       new Error(
-        "There should only be one counter for each objective. Break down the goal if you need to."
-      )
+        "There should only be one counter for each objective. Break down the goal if you need to.",
+      ),
     );
 
     const req = mockRequest({
@@ -117,7 +136,9 @@ describe("createObjective controller", () => {
   });
 
   it("returns 500 for an unexpected non-Error rejection", async () => {
-    vi.mocked(objectiveService.createObjective).mockRejectedValue("unexpected failure");
+    vi.mocked(objectiveService.createObjective).mockRejectedValue(
+      "unexpected failure",
+    );
 
     const req = mockRequest({ description: "test", isTask: false });
     const res = mockResponse();
@@ -125,11 +146,15 @@ describe("createObjective controller", () => {
     await createObjective(req, res);
 
     expect(res.status).toHaveBeenCalledWith(500);
-    expect(res.json).toHaveBeenCalledWith({ error: "failed to create objective" });
+    expect(res.json).toHaveBeenCalledWith({
+      error: "failed to create objective",
+    });
   });
 
   it("passes the exact request body through to the service unmodified", async () => {
-    vi.mocked(objectiveService.createObjective).mockResolvedValue({ id: 1 } as any);
+    vi.mocked(objectiveService.createObjective).mockResolvedValue({
+      id: 1,
+    } as any);
 
     const body = { description: "Do {reps} reps", isTask: true };
     const req = mockRequest(body);
@@ -149,20 +174,52 @@ describe("updateObjective controller", () => {
   // --- id parsing ---
 
   it("returns 400 without calling the service when id is not a valid integer", async () => {
-    const req = mockRequest({ description: "test", isTask: false }, { id: "not-a-number" });
+    const req = mockRequest(
+      { description: "test", isTask: false },
+      { id: "not-a-number" },
+    );
     const res = mockResponse();
 
     await updateObjective(req, res);
 
     expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json).toHaveBeenCalledWith({ error: "id must be a valid integer" });
+    expect(res.json).toHaveBeenCalledWith({
+      error: "id must be a valid integer",
+    });
     expect(objectiveService.updateObjective).not.toHaveBeenCalled();
   });
 
   it("calls the service with id parsed as a number, merged with the request body", async () => {
-    vi.mocked(objectiveService.updateObjective).mockResolvedValue({ id: 1 } as any);
+    vi.mocked(objectiveService.updateObjective).mockResolvedValue({
+      id: 1,
+    } as any);
 
-    const req = mockRequest({ description: "updated", isTask: true }, { id: "1" });
+    const req = mockRequest(
+      { description: "updated", isTask: true },
+      { id: "1" },
+    );
+    const res = mockResponse();
+
+    await updateObjective(req, res);
+
+    expect(objectiveService.updateObjective).toHaveBeenCalledWith({
+      id: 1,
+      description: "updated",
+      isTask: true,
+    });
+  });
+
+  it("ignores an id in the request body, always using the id parsed from the URL param", async () => {
+    vi.mocked(objectiveService.updateObjective).mockResolvedValue({
+      id: 1,
+    } as any);
+
+    // A malicious or buggy client sends a different id in the body than
+    // the one in the URL — the URL param must win.
+    const req = mockRequest(
+      { id: 999, description: "updated", isTask: true },
+      { id: "1" },
+    );
     const res = mockResponse();
 
     await updateObjective(req, res);
@@ -183,9 +240,14 @@ describe("updateObjective controller", () => {
       isTask: false,
       counter: null,
     };
-    vi.mocked(objectiveService.updateObjective).mockResolvedValue(fakeUpdated as any);
+    vi.mocked(objectiveService.updateObjective).mockResolvedValue(
+      fakeUpdated as any,
+    );
 
-    const req = mockRequest({ description: "updated description", isTask: false }, { id: "1" });
+    const req = mockRequest(
+      { description: "updated description", isTask: false },
+      { id: "1" },
+    );
     const res = mockResponse();
 
     await updateObjective(req, res);
@@ -198,10 +260,13 @@ describe("updateObjective controller", () => {
 
   it("returns 404 when the objective does not exist", async () => {
     vi.mocked(objectiveService.updateObjective).mockRejectedValue(
-      new Error("objective not found")
+      new Error("objective not found"),
     );
 
-    const req = mockRequest({ description: "test", isTask: false }, { id: "999" });
+    const req = mockRequest(
+      { description: "test", isTask: false },
+      { id: "999" },
+    );
     const res = mockResponse();
 
     await updateObjective(req, res);
@@ -214,7 +279,7 @@ describe("updateObjective controller", () => {
 
   it("returns 400 when description is missing", async () => {
     vi.mocked(objectiveService.updateObjective).mockRejectedValue(
-      new Error("description is required")
+      new Error("description is required"),
     );
 
     const req = mockRequest({ description: "", isTask: false }, { id: "1" });
@@ -228,28 +293,33 @@ describe("updateObjective controller", () => {
 
   it("returns 400 when isTask is not a boolean", async () => {
     vi.mocked(objectiveService.updateObjective).mockRejectedValue(
-      new Error("isTask must be a boolean")
+      new Error("isTask must be a boolean"),
     );
 
-    const req = mockRequest({ description: "test", isTask: "yes" }, { id: "1" });
+    const req = mockRequest(
+      { description: "test", isTask: "yes" },
+      { id: "1" },
+    );
     const res = mockResponse();
 
     await updateObjective(req, res);
 
     expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json).toHaveBeenCalledWith({ error: "isTask must be a boolean" });
+    expect(res.json).toHaveBeenCalledWith({
+      error: "isTask must be a boolean",
+    });
   });
 
   it("returns 400 when the description has more than one placeholder", async () => {
     vi.mocked(objectiveService.updateObjective).mockRejectedValue(
       new Error(
-        "There should only be one counter for each objective. Break down the goal if you need to."
-      )
+        "There should only be one counter for each objective. Break down the goal if you need to.",
+      ),
     );
 
     const req = mockRequest(
       { description: "Do {pushups} pushups and {situps} situps", isTask: true },
-      { id: "1" }
+      { id: "1" },
     );
     const res = mockResponse();
 
@@ -265,14 +335,21 @@ describe("updateObjective controller", () => {
   // --- 500 for unexpected non-Error rejection ---
 
   it("returns 500 for an unexpected non-Error rejection", async () => {
-    vi.mocked(objectiveService.updateObjective).mockRejectedValue("unexpected failure");
+    vi.mocked(objectiveService.updateObjective).mockRejectedValue(
+      "unexpected failure",
+    );
 
-    const req = mockRequest({ description: "test", isTask: false }, { id: "1" });
+    const req = mockRequest(
+      { description: "test", isTask: false },
+      { id: "1" },
+    );
     const res = mockResponse();
 
     await updateObjective(req, res);
 
     expect(res.status).toHaveBeenCalledWith(500);
-    expect(res.json).toHaveBeenCalledWith({ error: "failed to update objective" });
+    expect(res.json).toHaveBeenCalledWith({
+      error: "failed to update objective",
+    });
   });
 });

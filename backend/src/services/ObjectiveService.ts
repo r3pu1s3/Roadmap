@@ -6,6 +6,7 @@ const DESCRIPTION_WORD_LIMIT = 25;
 export interface CreateObjectiveInput {
   description: string;
   isTask: boolean;
+  mapId: number;
 }
 
 export interface UpdateObjectiveInput {
@@ -22,7 +23,7 @@ function validateObjectiveInput(description: string, isTask: boolean) {
   const wordCount = description.trim().split(/\s+/).length;
   if (wordCount > DESCRIPTION_WORD_LIMIT) {
     throw new Error(
-      `description must be ${DESCRIPTION_WORD_LIMIT} words or fewer (got ${wordCount})`
+      `description must be ${DESCRIPTION_WORD_LIMIT} words or fewer (got ${wordCount})`,
     );
   }
 
@@ -31,14 +32,17 @@ function validateObjectiveInput(description: string, isTask: boolean) {
   }
 }
 
-function resolveCounterLabel(description: string, isTask: boolean): string | null {
+function resolveCounterLabel(
+  description: string,
+  isTask: boolean,
+): string | null {
   if (!isTask) return null;
 
   const labels = parseCounterLabels(description);
 
   if (labels.length > 1) {
     throw new Error(
-      "There should only be one counter for each objective. Break down the goal if you need to."
+      "There should only be one counter for each objective. Break down the goal if you need to.",
     );
   }
 
@@ -46,10 +50,20 @@ function resolveCounterLabel(description: string, isTask: boolean): string | nul
 }
 
 export async function createObjective(data: CreateObjectiveInput) {
-  const { description, isTask } = data;
+  const { description, isTask, mapId } = data;
 
   // --- Validation (business rules Prisma can't enforce) ---
   validateObjectiveInput(description, isTask);
+
+  if (!Number.isInteger(mapId)) {
+    throw new Error("mapId is required and must be a valid integer");
+  }
+
+  const map = await prisma.map.findUnique({ where: { id: mapId } });
+  if (!map) {
+    throw new Error("mapId does not reference an existing map");
+  }
+
   const counterLabel = resolveCounterLabel(description, isTask);
 
   // --- Create ---
@@ -57,6 +71,7 @@ export async function createObjective(data: CreateObjectiveInput) {
     data: {
       description,
       isTask,
+      mapId,
       counter: counterLabel
         ? {
             create: {
@@ -87,9 +102,6 @@ export async function updateObjective(data: UpdateObjectiveInput) {
   const counterLabel = resolveCounterLabel(description, isTask);
 
   // --- Reconcile the counter against whatever it already was ---
-  // Unlike create, an update has to decide what happens to an EXISTING
-  // counter row: keep it, replace it, or remove it — depending on whether
-  // the description's placeholder changed.
   let counterOperation:
     | { create: { label: string; targetQuantity: null } }
     | { update: { label: string; targetQuantity: null } }
@@ -98,19 +110,15 @@ export async function updateObjective(data: UpdateObjectiveInput) {
 
   if (counterLabel) {
     if (!existing.counter) {
-      // No counter existed before — create one.
-      counterOperation = { create: { label: counterLabel, targetQuantity: null } };
+      counterOperation = {
+        create: { label: counterLabel, targetQuantity: null },
+      };
     } else if (existing.counter.label !== counterLabel) {
-      // The placeholder changed (e.g. {pushups} -> {situps}) — the old
-      // targetQuantity no longer means anything, so reset it to null
-      // rather than silently keeping a stale number under a new label.
-      counterOperation = { update: { label: counterLabel, targetQuantity: null } };
+      counterOperation = {
+        update: { label: counterLabel, targetQuantity: null },
+      };
     }
-    // else: label is unchanged — leave the counter (and its
-    // targetQuantity) untouched, don't set counterOperation at all.
   } else if (existing.counter) {
-    // isTask is now false, or the placeholder was removed from the
-    // description — the objective no longer has anything to count.
     counterOperation = { delete: true };
   }
 

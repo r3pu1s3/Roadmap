@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import * as objectiveService from "../service/ObjectiveService";
+import * as objectiveService from "../services/ObjectiveService";
 
 export async function createObjective(req: Request, res: Response) {
   try {
@@ -22,9 +22,13 @@ export async function updateObjective(req: Request, res: Response) {
       return res.status(400).json({ error: "id must be a valid integer" });
     }
 
+    // Only description/isTask are forwarded — even if the client sends an
+    // "id" in the body, it's silently ignored rather than overriding the
+    // id parsed and validated from the URL param above.
     const objective = await objectiveService.updateObjective({
       id,
-      ...req.body,
+      description: req.body.description,
+      isTask: req.body.isTask,
     });
     res.status(200).json(objective);
   } catch (err) {
