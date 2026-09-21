@@ -13,10 +13,25 @@ datasource db {
   
 }
 
+enum MapType{
+  Project
+  Habit
+}
+
+model Map {
+  id          Int @id @default(autoincrement())
+  name        String
+  type        MapType
+  objectives  Objective[]
+}
+
 model Objective {
   id          Int    @id @default(autoincrement())
   description String
   isTask   Boolean
+
+  mapId    Int
+  map   Map @relation(fields: [mapId], references: [id], onDelete: Cascade)
 
   counter ObjectiveCounter?
 
