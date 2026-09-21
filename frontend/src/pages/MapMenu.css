@@ -1,0 +1,166 @@
+.map-menu-page {
+  width: 100vw;
+  min-height: 100vh;
+  background: #0a0a0a;
+  font-family: system-ui, sans-serif;
+  color: #e5e5e5;
+  padding: 40px 24px;
+  box-sizing: border-box;
+}
+
+.map-menu-header {
+  max-width: 560px;
+  margin: 0 auto 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.map-menu-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: #f5f5f5;
+  margin: 0;
+}
+
+.map-menu-new-btn {
+  background: #6366f1;
+  color: white;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 14px;
+  border-radius: 6px;
+}
+
+.map-menu-new-btn:hover {
+  background: #4f46e5;
+}
+
+.map-menu-status,
+.map-menu-error {
+  max-width: 560px;
+  margin: 0 auto;
+  font-size: 13px;
+  color: #a3a3a3;
+  text-align: center;
+  padding: 24px 0;
+}
+
+.map-menu-error {
+  color: #f87171;
+}
+
+.map-menu-list {
+  max-width: 560px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.map-menu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: #171717;
+  border: 1px solid #2e2e2e;
+  border-radius: 8px;
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.map-menu-row:hover {
+  border-color: #4d4d4d;
+}
+
+.map-menu-row-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.map-menu-row-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #f5f5f5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.map-menu-row-type {
+  font-size: 11px;
+  color: #a3a3a3;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.map-menu-edit-icon {
+  background: none;
+  border: none;
+  color: #737373;
+  font-size: 15px;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.map-menu-edit-icon:hover {
+  color: #e5e5e5;
+  background: #262626;
+}
+
+.map-menu-edit-input {
+  flex: 1;
+  min-width: 0;
+  background: #0f0f0f;
+  border: 1px solid #6366f1;
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: #f5f5f5;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+}
+
+.map-menu-edit-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.map-menu-edit-error {
+  font-size: 11px;
+  color: #f87171;
+}
+
+.map-menu-btn {
+  padding: 7px 12px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.map-menu-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.map-menu-btn-secondary {
+  background: transparent;
+  border-color: #333;
+  color: #a3a3a3;
+}
+
+.map-menu-btn-primary {
+  background: #6366f1;
+  color: white;
+}

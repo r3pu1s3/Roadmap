@@ -1,14 +1,16 @@
-import { useState } from 'react'
-import './App.css'
-import GoalGraphPage from './pages/Canvas'
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import MapMenu from "./pages/MapMenu";
+import MapForm from "./pages/MapForm";
+import Canvas from "./pages/Map";
 
-function App() {
-
+export default function App() {
   return (
-    <>
-     <GoalGraphPage></GoalGraphPage>
-    </>
-  )
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<MapMenu />} />
+        <Route path="/maps/new" element={<MapForm />} />
+        <Route path="/maps/:mapId" element={<Canvas />} />
+      </Routes>
+    </BrowserRouter>
+  );
 }
-
-export default App
