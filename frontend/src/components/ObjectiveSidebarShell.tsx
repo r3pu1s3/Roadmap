@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react';
-import './ObjectiveSidebar.css';
+import type { ReactNode } from "react";
+import "./ObjectiveSidebar.css";
 
 interface ObjectiveSidebarShellProps {
   isOpen: boolean;
@@ -29,7 +29,7 @@ export default function ObjectiveSidebarShell({
   onPrimaryClick,
   primaryDisabled = false,
   showPrimary = true,
-  secondaryLabel = 'Cancel',
+  secondaryLabel = "Cancel",
   onSecondaryClick,
   isSaving = false,
   errorMessage = null,
@@ -61,9 +61,9 @@ export default function ObjectiveSidebarShell({
             className="obj-form-btn obj-form-btn-primary"
             onClick={onPrimaryClick}
             disabled={isSaving || primaryDisabled}
-            style={{ visibility: showPrimary ? 'visible' : 'hidden' }}
+            style={{ visibility: showPrimary ? "visible" : "hidden" }}
           >
-            {isSaving ? 'Saving…' : primaryLabel}
+            {isSaving ? "Saving…" : primaryLabel}
           </button>
         </div>
       </div>

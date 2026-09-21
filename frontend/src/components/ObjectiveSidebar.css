@@ -75,7 +75,9 @@
   border-radius: 8px;
   padding: 14px 16px;
   cursor: pointer;
-  transition: border-color 0.15s ease, background-color 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease;
 }
 
 .obj-form-type-btn:hover {

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import ObjectiveSidebarShell from './ObjectiveSidebarShell';
+import { useState } from "react";
+import ObjectiveSidebarShell from "./ObjectiveSidebarShell";
 
 export interface ObjectiveCounterData {
   label: string;
@@ -39,7 +39,7 @@ export default function ObjectiveEditSidebar({
   // to remount this component (e.g. via a `key={objective.id}`) whenever a
   // different node is selected, so these defaults stay in sync with
   // whichever objective is currently being edited.
-  const [description, setDescription] = useState(objective?.description ?? '');
+  const [description, setDescription] = useState(objective?.description ?? "");
   const [isTask, setIsTask] = useState(objective?.isTask ?? false);
 
   if (!objective) return null;
@@ -48,7 +48,7 @@ export default function ObjectiveEditSidebar({
     onSubmit({ description, isTask });
   }
 
-  const title = `Edit ${isTask ? 'task' : 'objective'}`;
+  const title = `Edit ${isTask ? "task" : "objective"}`;
 
   return (
     <ObjectiveSidebarShell
@@ -78,14 +78,14 @@ export default function ObjectiveEditSidebar({
         <button
           className="obj-form-type-btn"
           onClick={() => setIsTask(false)}
-          style={{ borderColor: !isTask ? '#6366f1' : undefined }}
+          style={{ borderColor: !isTask ? "#6366f1" : undefined }}
         >
           <span className="obj-form-type-btn-title">Objective</span>
         </button>
         <button
           className="obj-form-type-btn"
           onClick={() => setIsTask(true)}
-          style={{ borderColor: isTask ? '#6366f1' : undefined }}
+          style={{ borderColor: isTask ? "#6366f1" : undefined }}
         >
           <span className="obj-form-type-btn-title">Task</span>
         </button>

@@ -1,12 +1,12 @@
-import { useState } from 'react';
-import ObjectiveSidebarShell from './ObjectiveSidebarShell';
+import { useState } from "react";
+import ObjectiveSidebarShell from "./ObjectiveSidebarShell";
 
 export interface ObjectiveFormData {
   isTask: boolean;
   description: string;
 }
 
-type Step = 'type' | 'description';
+type Step = "type" | "description";
 
 interface ObjectiveSidebarProps {
   isOpen: boolean;
@@ -23,17 +23,17 @@ export default function ObjectiveSidebar({
   isSaving = false,
   errorMessage = null,
 }: ObjectiveSidebarProps) {
-  const [step, setStep] = useState<Step>('type');
+  const [step, setStep] = useState<Step>("type");
   const [isTask, setIsTask] = useState<boolean | null>(null);
-  const [description, setDescription] = useState('');
+  const [description, setDescription] = useState("");
 
   function selectType(value: boolean) {
     setIsTask(value);
-    setStep('description');
+    setStep("description");
   }
 
   function handleBack() {
-    setStep('type');
+    setStep("type");
   }
 
   function handleSubmit() {
@@ -41,7 +41,7 @@ export default function ObjectiveSidebar({
     onSubmit({ isTask, description });
   }
 
-  const title = `New ${step === 'type' ? 'node' : isTask ? 'task' : 'objective'}`;
+  const title = `New ${step === "type" ? "node" : isTask ? "task" : "objective"}`;
 
   return (
     <ObjectiveSidebarShell
@@ -50,32 +50,41 @@ export default function ObjectiveSidebar({
       onClose={onClose}
       isSaving={isSaving}
       errorMessage={errorMessage}
-      secondaryLabel={step === 'type' ? 'Cancel' : 'Back'}
-      onSecondaryClick={step === 'type' ? onClose : handleBack}
-      showPrimary={step === 'description'}
+      secondaryLabel={step === "type" ? "Cancel" : "Back"}
+      onSecondaryClick={step === "type" ? onClose : handleBack}
+      showPrimary={step === "description"}
       primaryLabel="Submit"
       primaryDisabled={description.trim().length === 0}
       onPrimaryClick={handleSubmit}
     >
-      {step === 'type' && (
+      {step === "type" && (
         <>
           <label className="obj-form-label">What kind of node is this?</label>
           <div className="obj-form-type-options">
-            <button className="obj-form-type-btn" onClick={() => selectType(false)} autoFocus>
+            <button
+              className="obj-form-type-btn"
+              onClick={() => selectType(false)}
+              autoFocus
+            >
               <span className="obj-form-type-btn-title">Objective</span>
-              <span className="obj-form-type-btn-desc">A higher-level goal, no counter attached</span>
+              <span className="obj-form-type-btn-desc">
+                A higher-level goal, no counter attached
+              </span>
             </button>
-            <button className="obj-form-type-btn" onClick={() => selectType(true)}>
+            <button
+              className="obj-form-type-btn"
+              onClick={() => selectType(true)}
+            >
               <span className="obj-form-type-btn-title">Task</span>
               <span className="obj-form-type-btn-desc">
-                A concrete, countable action (e.g. "{'{pushups}'} pushups")
+                A concrete, countable action (e.g. "{"{pushups}"} pushups")
               </span>
             </button>
           </div>
         </>
       )}
 
-      {step === 'description' && (
+      {step === "description" && (
         <>
           <label className="obj-form-label">Description</label>
           <textarea
@@ -83,7 +92,9 @@ export default function ObjectiveSidebar({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder={
-              isTask ? 'e.g. Do {pushups} pushups every morning' : 'e.g. Get stronger this year'
+              isTask
+                ? "e.g. Do {pushups} pushups every morning"
+                : "e.g. Get stronger this year"
             }
             rows={6}
             autoFocus
