@@ -430,6 +430,67 @@ describe("Map", () => {
     expect(getNodeElements(container)).toHaveLength(1);
   });
 
+  // --- node color-by-type: live preview on the create sidebar ---
+  // Objective.tsx derives its color variant from data.isTask (undefined ->
+  // "empty", false -> "objective", true -> "task"). These cases pin down
+  // that the canvas node's data reflects the user's type pick live, as soon
+  // as it's clicked on the sidebar's type step — well before Submit — and
+  // that cancelling still cleans up the placeholder correctly either way.
+
+  it("leaves a freshly-clicked placeholder node's data.isTask undefined (the 'empty' variant) before any type is picked", async () => {
+    const { container } = render(<Map />);
+    await waitForHydrated();
+
+    clickPane(container);
+
+    const [node] = getRfProps().nodes;
+    expect(node.data?.isTask).toBeUndefined();
+  });
+
+  it("live-previews data.isTask = false on the pending node as soon as 'Objective' is picked, before Submit is clicked", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<Map />);
+    await waitForHydrated();
+
+    clickPane(container);
+    const [pendingId] = getLocalNodeIds(container);
+    await user.click(screen.getByText("Objective"));
+
+    const node = getRfProps().nodes.find((n) => n.id === pendingId);
+    expect(node?.data?.isTask).toBe(false);
+  });
+
+  it("live-previews data.isTask = true on the pending node as soon as 'Task' is picked, before Submit is clicked", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<Map />);
+    await waitForHydrated();
+
+    clickPane(container);
+    const [pendingId] = getLocalNodeIds(container);
+    await user.click(screen.getByText("Task"));
+
+    const node = getRfProps().nodes.find((n) => n.id === pendingId);
+    expect(node?.data?.isTask).toBe(true);
+  });
+
+  it("still removes the placeholder node entirely when the sidebar is closed after a type was live-previewed", async () => {
+    // Once a type is picked, the sidebar's own secondary button relabels
+    // from "Cancel" to "Back" (it moves to the description step), so the
+    // only way to actually abandon the draft from here is the shell's "×"
+    // close button — this is a regression guard that the live-preview
+    // addition above didn't break that cleanup path.
+    const user = userEvent.setup();
+    const { container } = render(<Map />);
+    await waitForHydrated();
+
+    clickPane(container);
+    await user.click(screen.getByText("Task"));
+    await user.click(screen.getByRole("button", { name: "Close" }));
+
+    expect(screen.queryByText("New task")).not.toBeInTheDocument();
+    expect(getRfProps().nodes).toHaveLength(0);
+  });
+
   // --- create: happy path ---
 
   it("calls createObjective with description, isTask, and mapId parsed from the route", async () => {
@@ -725,6 +786,81 @@ describe("Map", () => {
     expect(
       await screen.findByText("Failed to update objective"),
     ).toBeInTheDocument();
+  });
+
+  // --- node color-by-type: live preview & revert on the edit sidebar ---
+  // Mirrors the create-sidebar block above, but for editing an already-saved
+  // node, plus the new revert-on-cancel behavior (the edit sidebar has no
+  // "Back" step to dodge through — Cancel always closes it outright, so a
+  // live-previewed type change needs to be explicitly reverted rather than
+  // just left in place).
+
+  it("live-previews data.isTask on the canvas immediately when a different type is clicked in the edit sidebar, before Save", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<Map />);
+
+    // createSavedNode always saves as isTask: false, so "Task" is the
+    // "other" (non-current) type button here.
+    await createSavedNode(user, container, {
+      id: 42,
+      description: "Get stronger",
+    });
+    const [nodeId] = getLocalNodeIds(container);
+    fireEvent.click(getNodeElements(container)[0]);
+
+    await user.click(screen.getByText("Task"));
+
+    const node = getRfProps().nodes.find((n) => n.id === nodeId);
+    expect(node?.data?.isTask).toBe(true);
+  });
+
+  it("reverts the node's data.isTask back to its original value when the edit sidebar is cancelled after a type was live-previewed", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<Map />);
+
+    await createSavedNode(user, container, {
+      id: 42,
+      description: "Get stronger",
+    });
+    const [nodeId] = getLocalNodeIds(container);
+    fireEvent.click(getNodeElements(container)[0]);
+
+    await user.click(screen.getByText("Task"));
+    await user.click(screen.getByText("Cancel"));
+
+    const node = getRfProps().nodes.find((n) => n.id === nodeId);
+    expect(node?.data?.isTask).toBe(false);
+  });
+
+  it("ends with data.isTask matching the updateObjective response after Save, with no stale live-preview left over", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<Map />);
+
+    await createSavedNode(user, container, {
+      id: 42,
+      description: "Get stronger",
+    });
+    const [nodeId] = getLocalNodeIds(container);
+    fireEvent.click(getNodeElements(container)[0]);
+
+    mockedUpdateObjective.mockResolvedValueOnce({
+      id: 42,
+      mapId: 5,
+      description: "Get stronger",
+      isTask: true,
+      counter: null,
+    });
+
+    // Live-preview a type change first, then save — the final node data
+    // should come from the API response (handleEditSubmit's wholesale
+    // replace), not be left over from the live preview.
+    await user.click(screen.getByText("Task"));
+    await user.click(screen.getByText("Save"));
+
+    await waitFor(() => {
+      const node = getRfProps().nodes.find((n) => n.id === nodeId);
+      expect(node?.data?.isTask).toBe(true);
+    });
   });
 
   // --- concurrent-open guard ---

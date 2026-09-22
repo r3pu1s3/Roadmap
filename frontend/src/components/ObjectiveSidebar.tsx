@@ -14,6 +14,11 @@ interface ObjectiveSidebarProps {
   onSubmit: (data: ObjectiveFormData) => void;
   isSaving?: boolean;
   errorMessage?: string | null;
+  // Optional: fired whenever the user picks a type on the type-selection
+  // step, so a parent (e.g. the canvas page) can surface a live "type
+  // changed" notification. Omitted by most callers, so selectType must
+  // tolerate it being undefined.
+  onTypeChange?: (isTask: boolean) => void;
 }
 
 export default function ObjectiveSidebar({
@@ -22,6 +27,7 @@ export default function ObjectiveSidebar({
   onSubmit,
   isSaving = false,
   errorMessage = null,
+  onTypeChange,
 }: ObjectiveSidebarProps) {
   const [step, setStep] = useState<Step>("type");
   const [isTask, setIsTask] = useState<boolean | null>(null);
@@ -30,6 +36,7 @@ export default function ObjectiveSidebar({
   function selectType(value: boolean) {
     setIsTask(value);
     setStep("description");
+    onTypeChange?.(value);
   }
 
   function handleBack() {

@@ -190,6 +190,68 @@ describe("ObjectiveEditSidebar", () => {
     });
   });
 
+  // --- type change notification (onTypeChange) ---
+
+  it("calls onTypeChange(true) when the Task button is clicked from a plain objective", async () => {
+    const user = userEvent.setup();
+    const onTypeChange = vi.fn();
+    render(
+      <ObjectiveEditSidebar
+        isOpen={true}
+        objective={plainObjective}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+        onTypeChange={onTypeChange}
+      />,
+    );
+
+    await user.click(screen.getByText("Task"));
+
+    expect(onTypeChange).toHaveBeenCalledWith(true);
+  });
+
+  it("calls onTypeChange(false) when the Objective button is clicked from a task objective", async () => {
+    const user = userEvent.setup();
+    const onTypeChange = vi.fn();
+    render(
+      <ObjectiveEditSidebar
+        isOpen={true}
+        objective={taskObjective}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+        onTypeChange={onTypeChange}
+      />,
+    );
+
+    await user.click(screen.getByText("Objective"));
+
+    expect(onTypeChange).toHaveBeenCalledWith(false);
+  });
+
+  // onTypeChange is optional: every other test in this file omits it, so the
+  // buttons must keep working (no throw, highlight/local state still updates)
+  // when it's not passed at all.
+  it("does not throw and still re-highlights the clicked type button when onTypeChange is omitted", async () => {
+    const user = userEvent.setup();
+    render(
+      <ObjectiveEditSidebar
+        isOpen={true}
+        objective={plainObjective}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    await expect(user.click(screen.getByText("Task"))).resolves.not.toThrow();
+
+    expect(screen.getByText("Task").closest("button")).toHaveStyle({
+      borderColor: "#6366f1",
+    });
+    expect(screen.getByText("Objective").closest("button")).not.toHaveStyle({
+      borderColor: "#6366f1",
+    });
+  });
+
   // --- submit ---
 
   it("calls onSubmit with the current description and isTask", async () => {

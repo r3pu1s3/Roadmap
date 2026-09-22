@@ -55,7 +55,7 @@ describe("Objective", () => {
   });
 
   it("rendering twice with the same data prop produces identical markup", () => {
-    const sameData = { id: 42 };
+    const sameData = { id: 42, isTask: true };
 
     const first = renderObjective(sameData);
     const firstHtml = first.container.innerHTML;
@@ -87,5 +87,77 @@ describe("Objective", () => {
 
     expect(targetHandle?.classList.contains("connectable")).toBe(true);
     expect(sourceHandle?.classList.contains("connectable")).toBe(true);
+  });
+
+  // --- color-coding by objective type (task/objective/empty variant) ---
+  //
+  // vite.config.ts does not enable test.css, so jsdom never applies real
+  // stylesheet rules here — the component sets colors via an inline `style`
+  // object specifically so these tests can assert on `node.style.*` /
+  // `data-variant` directly instead of computed CSS.
+
+  it("renders with the task color when data.isTask is true", () => {
+    const { container } = renderObjective({ isTask: true });
+
+    const node = container.firstElementChild as HTMLElement;
+    expect(node.getAttribute("data-variant")).toBe("task");
+    expect(node.style.backgroundColor).toBe("var(--node-task-bg)");
+    expect(node.style.border).toContain("var(--node-task-border)");
+  });
+
+  it("renders with the objective color when data.isTask is false", () => {
+    const { container } = renderObjective({ isTask: false });
+
+    const node = container.firstElementChild as HTMLElement;
+    expect(node.getAttribute("data-variant")).toBe("objective");
+    expect(node.style.backgroundColor).toBe("var(--node-objective-bg)");
+    expect(node.style.border).toContain("var(--node-objective-border)");
+  });
+
+  it("renders with the empty color when data has no isTask key (fresh placeholder node)", () => {
+    const { container } = renderObjective({});
+
+    const node = container.firstElementChild as HTMLElement;
+    expect(node.getAttribute("data-variant")).toBe("empty");
+    expect(node.style.backgroundColor).toBe("var(--node-empty-bg)");
+    expect(node.style.border).toContain("var(--node-empty-border)");
+  });
+
+  it("renders with the empty color when data.isTask is explicitly null", () => {
+    // Defensive case: API responses or local state could carry `isTask: null`
+    // rather than omitting the key entirely — this must still fall back to "empty".
+    const { container } = renderObjective({ isTask: null });
+
+    const node = container.firstElementChild as HTMLElement;
+    expect(node.getAttribute("data-variant")).toBe("empty");
+    expect(node.style.backgroundColor).toBe("var(--node-empty-bg)");
+  });
+
+  it("uses visibly different colors for the task, objective, and empty variants", () => {
+    // Programmatic check that the three variants are actually distinguishable,
+    // not just structurally different attribute values that happen to render
+    // the same color.
+    const taskNode = renderObjective({ isTask: true }).container
+      .firstElementChild as HTMLElement;
+    cleanup();
+    const objectiveNode = renderObjective({ isTask: false }).container
+      .firstElementChild as HTMLElement;
+    cleanup();
+    const emptyNode = renderObjective({}).container
+      .firstElementChild as HTMLElement;
+
+    const colors = [
+      taskNode.style.backgroundColor,
+      objectiveNode.style.backgroundColor,
+      emptyNode.style.backgroundColor,
+    ];
+    expect(new Set(colors).size).toBe(3);
+
+    const borders = [
+      taskNode.style.border,
+      objectiveNode.style.border,
+      emptyNode.style.border,
+    ];
+    expect(new Set(borders).size).toBe(3);
   });
 });

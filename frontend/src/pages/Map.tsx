@@ -384,6 +384,37 @@ function MapInner() {
     [pendingNodeId],
   );
 
+  // Live-previews the pending (unsaved) placeholder node's color while the
+  // user is still on the create sidebar's type step, well before Submit —
+  // Objective.tsx derives its color variant directly from data.isTask.
+  const handleFormTypeChange = useCallback(
+    (isTask: boolean) => {
+      if (!pendingNodeId) return;
+      setNodes((prev) =>
+        prev.map((n) =>
+          n.id === pendingNodeId ? { ...n, data: { ...n.data, isTask } } : n,
+        ),
+      );
+    },
+    [pendingNodeId],
+  );
+
+  // Mirrors handleFormTypeChange for the edit sidebar. Unlike create, an
+  // edit-sidebar type change previews on an ALREADY-SAVED node, so it must be
+  // explicitly reverted on cancel (see handleEditClose below) rather than
+  // just discarding an unsaved placeholder.
+  const handleEditTypeChange = useCallback(
+    (isTask: boolean) => {
+      if (!editingNode) return;
+      setNodes((prev) =>
+        prev.map((n) =>
+          n.id === editingNode.id ? { ...n, data: { ...n.data, isTask } } : n,
+        ),
+      );
+    },
+    [editingNode],
+  );
+
   // --- edit flow handlers ---
 
   const handleNodeClick = useCallback(
@@ -402,10 +433,22 @@ function MapInner() {
   );
 
   const handleEditClose = useCallback(() => {
+    // Revert any live-previewed (unsaved) type change back to the snapshot
+    // captured when the edit sidebar opened. editingNode itself is never
+    // mutated after setEditingNode(node) below (only the `nodes` array is,
+    // via handleEditTypeChange), so editingNode.data still holds the
+    // original, pre-preview values here.
+    if (editingNode) {
+      setNodes((prev) =>
+        prev.map((n) =>
+          n.id === editingNode.id ? { ...n, data: editingNode.data } : n,
+        ),
+      );
+    }
     setEditingNode(null);
     setIsEditOpen(false);
     setEditError(null);
-  }, []);
+  }, [editingNode]);
 
   const handleEditSubmit = useCallback(
     async (formData: UpdateObjectiveFormData) => {
@@ -518,6 +561,7 @@ function MapInner() {
         isOpen={isFormOpen}
         onClose={handleFormClose}
         onSubmit={handleFormSubmit}
+        onTypeChange={handleFormTypeChange}
         isSaving={isSaving}
         errorMessage={saveError}
       />
@@ -528,6 +572,7 @@ function MapInner() {
         objective={editingObjective}
         onClose={handleEditClose}
         onSubmit={handleEditSubmit}
+        onTypeChange={handleEditTypeChange}
         isSaving={isEditSaving}
         errorMessage={editError}
       />

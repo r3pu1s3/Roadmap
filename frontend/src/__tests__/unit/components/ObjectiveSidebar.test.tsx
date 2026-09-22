@@ -89,6 +89,61 @@ describe("ObjectiveSidebar", () => {
     ).toBeInTheDocument();
   });
 
+  // --- onTypeChange notification ---
+  // Contract: an optional `onTypeChange?: (isTask: boolean) => void` prop is
+  // fired from `selectType` alongside the existing setStep/setIsTask calls,
+  // so callers (sidebars) can show a live "type changed" notification.
+
+  it("calls onTypeChange(false) when Objective is selected on the type step", async () => {
+    const user = userEvent.setup();
+    const onTypeChange = vi.fn();
+    render(
+      <ObjectiveSidebar
+        isOpen={true}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+        onTypeChange={onTypeChange}
+      />,
+    );
+
+    await user.click(screen.getByText("Objective"));
+
+    expect(onTypeChange).toHaveBeenCalledTimes(1);
+    expect(onTypeChange).toHaveBeenCalledWith(false);
+  });
+
+  it("calls onTypeChange(true) when Task is selected on the type step", async () => {
+    const user = userEvent.setup();
+    const onTypeChange = vi.fn();
+    render(
+      <ObjectiveSidebar
+        isOpen={true}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+        onTypeChange={onTypeChange}
+      />,
+    );
+
+    await user.click(screen.getByText("Task"));
+
+    expect(onTypeChange).toHaveBeenCalledTimes(1);
+    expect(onTypeChange).toHaveBeenCalledWith(true);
+  });
+
+  it("does not throw and still advances to the description step when onTypeChange is omitted", async () => {
+    // Guards the optional-prop contract: every existing call site in this
+    // file omits onTypeChange, so selectType must tolerate it being undefined.
+    const user = userEvent.setup();
+    render(
+      <ObjectiveSidebar isOpen={true} onClose={vi.fn()} onSubmit={vi.fn()} />,
+    );
+
+    await user.click(screen.getByText("Objective"));
+
+    expect(screen.getByText("New objective")).toBeInTheDocument();
+    expect(screen.getByText("Description")).toBeInTheDocument();
+  });
+
   // --- description step interactions ---
 
   it("lets the user type a description", async () => {

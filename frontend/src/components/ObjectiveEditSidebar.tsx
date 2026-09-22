@@ -25,6 +25,10 @@ interface ObjectiveEditSidebarProps {
   onSubmit: (data: UpdateObjectiveFormData) => void;
   isSaving?: boolean;
   errorMessage?: string | null;
+  // Optional live notification fired whenever the user toggles the type
+  // buttons below, independent of submit. Lets the canvas (Map.tsx) preview
+  // the node's new color before the edit is actually saved.
+  onTypeChange?: (isTask: boolean) => void;
 }
 
 export default function ObjectiveEditSidebar({
@@ -34,6 +38,7 @@ export default function ObjectiveEditSidebar({
   onSubmit,
   isSaving = false,
   errorMessage = null,
+  onTypeChange,
 }: ObjectiveEditSidebarProps) {
   // Initialized once from the objective passed in. The parent is expected
   // to remount this component (e.g. via a `key={objective.id}`) whenever a
@@ -77,14 +82,20 @@ export default function ObjectiveEditSidebar({
       <div className="obj-form-type-options">
         <button
           className="obj-form-type-btn"
-          onClick={() => setIsTask(false)}
+          onClick={() => {
+            setIsTask(false);
+            onTypeChange?.(false);
+          }}
           style={{ borderColor: !isTask ? "#6366f1" : undefined }}
         >
           <span className="obj-form-type-btn-title">Objective</span>
         </button>
         <button
           className="obj-form-type-btn"
-          onClick={() => setIsTask(true)}
+          onClick={() => {
+            setIsTask(true);
+            onTypeChange?.(true);
+          }}
           style={{ borderColor: isTask ? "#6366f1" : undefined }}
         >
           <span className="obj-form-type-btn-title">Task</span>
