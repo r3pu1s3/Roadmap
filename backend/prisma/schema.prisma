@@ -13,15 +13,9 @@ datasource db {
   
 }
 
-enum MapType{
-  Project
-  Habit
-}
-
 model Map {
   id          Int @id @default(autoincrement())
   name        String
-  type        MapType
   objectives  Objective[]
 }
 

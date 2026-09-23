@@ -1,12 +1,9 @@
 import type { ObjectiveResponse } from "./ObjectiveApi";
 import type { ObjectiveEdgeResponse } from "./ObjectiveEdgeApi";
 
-export type MapType = "Project" | "Habit";
-
 export interface MapResponse {
   id: number;
   name: string;
-  type: MapType;
 }
 
 // The canvas needs the full graph (objectives + edges) in one call, so this
@@ -20,7 +17,6 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
 
 export async function createMap(payload: {
   name: string;
-  type: MapType;
 }): Promise<MapResponse> {
   const response = await fetch(`${API_BASE}/maps`, {
     method: "POST",

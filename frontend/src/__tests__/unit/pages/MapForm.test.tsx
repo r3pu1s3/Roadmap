@@ -34,71 +34,19 @@ describe("MapForm", () => {
 
   // --- basic rendering ---
 
-  it("renders the title, name input, both type options, and the submit button", () => {
+  it("renders the title, name input, and the submit button", () => {
     render(<MapForm />);
 
     expect(screen.getByText("New map")).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/fitness goals/i)).toBeInTheDocument();
-    expect(screen.getByText("Project")).toBeInTheDocument();
-    expect(screen.getByText("Habit")).toBeInTheDocument();
     expect(screen.getByText("Create map")).toBeInTheDocument();
   });
 
   // --- submit enablement ---
 
-  it("disables submit when name is empty and no type is selected", () => {
+  it("disables submit when name is empty", () => {
     render(<MapForm />);
     expect(screen.getByText("Create map")).toBeDisabled();
-  });
-
-  it("keeps submit disabled when a type is selected but name is still empty", async () => {
-    const user = userEvent.setup();
-    render(<MapForm />);
-
-    await user.click(screen.getByText("Project"));
-
-    expect(screen.getByText("Create map")).toBeDisabled();
-  });
-
-  it("keeps submit disabled when name is filled but no type is selected", async () => {
-    const user = userEvent.setup();
-    render(<MapForm />);
-
-    await user.type(screen.getByPlaceholderText(/fitness goals/i), "My map");
-
-    expect(screen.getByText("Create map")).toBeDisabled();
-  });
-
-  // --- type selection visual state ---
-
-  it("marks the Project button as selected when clicked, and enables submit once name is filled", async () => {
-    const user = userEvent.setup();
-    render(<MapForm />);
-
-    await user.click(screen.getByText("Project"));
-    // className includes "selected" per the plan's visual-state contract
-    expect(screen.getByText("Project").closest("button")).toHaveClass(
-      "selected",
-    );
-    expect(screen.getByText("Habit").closest("button")).not.toHaveClass(
-      "selected",
-    );
-
-    await user.type(screen.getByPlaceholderText(/fitness goals/i), "My map");
-
-    expect(screen.getByText("Create map")).not.toBeDisabled();
-  });
-
-  it("marks the Habit button as selected when clicked, and enables submit once name is filled", async () => {
-    const user = userEvent.setup();
-    render(<MapForm />);
-
-    await user.click(screen.getByText("Habit"));
-    expect(screen.getByText("Habit").closest("button")).toHaveClass("selected");
-
-    await user.type(screen.getByPlaceholderText(/fitness goals/i), "My map");
-
-    expect(screen.getByText("Create map")).not.toBeDisabled();
   });
 
   // --- name input ---
@@ -115,22 +63,19 @@ describe("MapForm", () => {
 
   // --- successful submit ---
 
-  it("calls createMap with the trimmed name and selected type, then navigates to the new map on success", async () => {
+  it("calls createMap with the trimmed name, then navigates to the new map on success", async () => {
     const user = userEvent.setup();
     mockedCreateMap.mockResolvedValue({
       id: 42,
       name: "My map",
-      type: "Project",
     });
     render(<MapForm />);
 
-    await user.click(screen.getByText("Project"));
     await user.type(screen.getByPlaceholderText(/fitness goals/i), "My map");
     await user.click(screen.getByText("Create map"));
 
     expect(mockedCreateMap).toHaveBeenCalledWith({
       name: "My map",
-      type: "Project",
     });
     expect(mockNavigate).toHaveBeenCalledWith("/maps/42");
   });
@@ -140,11 +85,9 @@ describe("MapForm", () => {
     mockedCreateMap.mockResolvedValue({
       id: 7,
       name: "Trimmed",
-      type: "Habit",
     });
     render(<MapForm />);
 
-    await user.click(screen.getByText("Habit"));
     await user.type(
       screen.getByPlaceholderText(/fitness goals/i),
       "  Trimmed  ",
@@ -153,7 +96,6 @@ describe("MapForm", () => {
 
     expect(mockedCreateMap).toHaveBeenCalledWith({
       name: "Trimmed",
-      type: "Habit",
     });
   });
 
@@ -165,7 +107,6 @@ describe("MapForm", () => {
     mockedCreateMap.mockReturnValue(new Promise(() => {}));
     render(<MapForm />);
 
-    await user.click(screen.getByText("Project"));
     await user.type(screen.getByPlaceholderText(/fitness goals/i), "My map");
     await user.click(screen.getByText("Create map"));
 
@@ -180,7 +121,6 @@ describe("MapForm", () => {
     mockedCreateMap.mockRejectedValue(new Error("Name already taken"));
     render(<MapForm />);
 
-    await user.click(screen.getByText("Project"));
     await user.type(screen.getByPlaceholderText(/fitness goals/i), "My map");
     await user.click(screen.getByText("Create map"));
 
@@ -192,7 +132,6 @@ describe("MapForm", () => {
     mockedCreateMap.mockRejectedValue("boom");
     render(<MapForm />);
 
-    await user.click(screen.getByText("Habit"));
     await user.type(screen.getByPlaceholderText(/fitness goals/i), "My map");
     await user.click(screen.getByText("Create map"));
 
@@ -205,7 +144,6 @@ describe("MapForm", () => {
     const user = userEvent.setup();
     render(<MapForm />);
 
-    await user.click(screen.getByText("Project"));
     await user.type(
       screen.getByPlaceholderText(/fitness goals/i),
       "one two three four five six seven eight nine ten",
@@ -221,7 +159,6 @@ describe("MapForm", () => {
     const user = userEvent.setup();
     render(<MapForm />);
 
-    await user.click(screen.getByText("Project"));
     await user.type(
       screen.getByPlaceholderText(/fitness goals/i),
       "one two three four five six seven eight nine ten eleven",
@@ -238,7 +175,6 @@ describe("MapForm", () => {
     const user = userEvent.setup();
     render(<MapForm />);
 
-    await user.click(screen.getByText("Project"));
     const input = screen.getByPlaceholderText(/fitness goals/i);
     await user.type(
       input,
@@ -262,7 +198,6 @@ describe("MapForm", () => {
     const user = userEvent.setup();
     render(<MapForm />);
 
-    await user.click(screen.getByText("Project"));
     await user.type(
       screen.getByPlaceholderText(/fitness goals/i),
       "one two three four five six seven eight nine ten eleven twelve",

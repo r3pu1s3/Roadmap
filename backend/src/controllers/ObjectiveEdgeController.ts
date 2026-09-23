@@ -3,8 +3,7 @@ import * as objectiveEdgeService from "../services/ObjectiveEdgeService";
 
 // POST /objective-edges — create an edge between two objectives (parent ->
 // child). req.body is forwarded unmodified to the service, which owns all
-// validation (existence, self-loop, cross-map, duplicate, Habit single-
-// parent rule, cycle detection).
+// validation (existence, self-loop, cross-map, duplicate, cycle detection).
 export async function createObjectiveEdge(req: Request, res: Response) {
   try {
     const edge = await objectiveEdgeService.createObjectiveEdge(req.body);
@@ -13,7 +12,7 @@ export async function createObjectiveEdge(req: Request, res: Response) {
     if (err instanceof Error) {
       // Only the two "not found" messages map to 404; every other
       // service-thrown validation/business-rule error (self-loop,
-      // cross-map, duplicate, Habit single-parent, cycle) is a 400.
+      // cross-map, duplicate, cycle) is a 400.
       if (
         err.message === "parent objective not found" ||
         err.message === "child objective not found"

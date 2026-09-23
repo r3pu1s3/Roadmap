@@ -58,9 +58,9 @@ export async function updateMap(req: Request, res: Response) {
       return res.status(400).json({ error: "id must be a valid integer" });
     }
 
-    // Only "name" is forwarded — even if the client sends other fields
-    // (e.g. type), they're silently ignored rather than passed through,
-    // since updateMap only accepts { id, name }.
+    // Only "name" is forwarded — even if the client sends extra fields,
+    // they're silently ignored rather than passed through, since updateMap
+    // only accepts { id, name }.
     const map = await mapService.updateMap({ id, name: req.body.name });
     res.status(200).json(map);
   } catch (err) {

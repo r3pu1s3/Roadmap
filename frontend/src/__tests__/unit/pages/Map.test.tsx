@@ -219,7 +219,6 @@ describe("Map", () => {
     mockedGetMap.mockResolvedValue({
       id: 5,
       name: "Test Map",
-      type: "Project",
       objectives: [],
       edges: [],
     });
@@ -253,7 +252,6 @@ describe("Map", () => {
       mockedGetMap.mockResolvedValueOnce({
         id: 5,
         name: "Test Map",
-        type: "Project",
         objectives: [
           {
             id: 1,
@@ -298,7 +296,6 @@ describe("Map", () => {
       mockedGetMap.mockResolvedValueOnce({
         id: 5,
         name: "Test Map",
-        type: "Project",
         objectives: [
           { id: 1, mapId: 5, description: "A", isTask: false, counter: null },
           { id: 2, mapId: 5, description: "B", isTask: false, counter: null },
@@ -323,7 +320,6 @@ describe("Map", () => {
       mockedGetMap.mockResolvedValueOnce({
         id: 5,
         name: "Test Map",
-        type: "Project",
         objectives: [
           { id: 1, mapId: 5, description: "A", isTask: false, counter: null },
           { id: 2, mapId: 5, description: "B", isTask: false, counter: null },

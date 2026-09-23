@@ -43,16 +43,14 @@ afterEach(async () => {
 });
 
 describe("POST /maps (end-to-end, real HTTP + real database)", () => {
-  it("creates a map and returns 201 with the persisted name/type/id", async () => {
+  it("creates a map and returns 201 with the persisted name/id", async () => {
     const response = await request(app).post("/maps").send({
       name: "Test Map",
-      type: "Project",
     });
 
     expect(response.status).toBe(201);
     expect(response.body).toMatchObject({
       name: "Test Map",
-      type: "Project",
     });
     expect(response.body.id).toEqual(expect.any(Number));
     createdIds.push(response.body.id);
@@ -64,7 +62,6 @@ describe("POST /maps (end-to-end, real HTTP + real database)", () => {
 
     const response = await request(app).post("/maps").send({
       name: elevenWordName,
-      type: "Project",
     });
 
     expect(response.status).toBe(400);
@@ -78,19 +75,9 @@ describe("POST /maps (end-to-end, real HTTP + real database)", () => {
     expect(found).toBeNull();
   });
 
-  it("returns 400 when type is invalid", async () => {
-    const response = await request(app).post("/maps").send({
-      name: "Valid Name",
-      type: "Bogus",
-    });
-
-    expect(response.status).toBe(400);
-  });
-
   it("trims surrounding whitespace from the name before persisting", async () => {
     const response = await request(app).post("/maps").send({
       name: "  Test  ",
-      type: "Project",
     });
 
     expect(response.status).toBe(201);
@@ -108,7 +95,6 @@ describe("GET /maps (end-to-end, real HTTP + real database)", () => {
   it("returns 200 with an array that includes a just-created map", async () => {
     const createResponse = await request(app).post("/maps").send({
       name: "Findable Map",
-      type: "Habit",
     });
     createdIds.push(createResponse.body.id);
 
@@ -120,7 +106,6 @@ describe("GET /maps (end-to-end, real HTTP + real database)", () => {
         expect.objectContaining({
           id: createResponse.body.id,
           name: "Findable Map",
-          type: "Habit",
         }),
       ]),
     );
@@ -129,13 +114,11 @@ describe("GET /maps (end-to-end, real HTTP + real database)", () => {
   it("returns maps ordered by ascending id", async () => {
     const firstResponse = await request(app).post("/maps").send({
       name: "First Map",
-      type: "Project",
     });
     createdIds.push(firstResponse.body.id);
 
     const secondResponse = await request(app).post("/maps").send({
       name: "Second Map",
-      type: "Project",
     });
     createdIds.push(secondResponse.body.id);
 
@@ -178,7 +161,6 @@ describe("PATCH /maps/:id (end-to-end, real HTTP + real database)", () => {
   it("updates a map's name and returns 200, reflected in the DB", async () => {
     const createResponse = await request(app).post("/maps").send({
       name: "Old Name",
-      type: "Project",
     });
     createdIds.push(createResponse.body.id);
 
@@ -198,7 +180,6 @@ describe("PATCH /maps/:id (end-to-end, real HTTP + real database)", () => {
   it("returns 400 and leaves the name unchanged when name is empty/missing", async () => {
     const createResponse = await request(app).post("/maps").send({
       name: "Original",
-      type: "Project",
     });
     createdIds.push(createResponse.body.id);
 
@@ -217,7 +198,6 @@ describe("PATCH /maps/:id (end-to-end, real HTTP + real database)", () => {
   it("returns 400 with the word-limit message and leaves the name unchanged when the new name exceeds 10 words", async () => {
     const createResponse = await request(app).post("/maps").send({
       name: "Original",
-      type: "Project",
     });
     createdIds.push(createResponse.body.id);
 
@@ -239,26 +219,6 @@ describe("PATCH /maps/:id (end-to-end, real HTTP + real database)", () => {
     });
     expect(fromDb?.name).toBe("Original");
   });
-
-  it("ignores a type field sent in the body — type is not editable via PATCH", async () => {
-    const createResponse = await request(app).post("/maps").send({
-      name: "Original",
-      type: "Project",
-    });
-    createdIds.push(createResponse.body.id);
-
-    const updateResponse = await request(app)
-      .patch(`/maps/${createResponse.body.id}`)
-      .send({ name: "New Name", type: "Habit" });
-
-    expect(updateResponse.status).toBe(200);
-    expect(updateResponse.body.type).toBe("Project");
-
-    const fromDb = await prisma.map.findUnique({
-      where: { id: createResponse.body.id },
-    });
-    expect(fromDb?.type).toBe("Project");
-  });
 });
 
 describe("GET /maps/:id (end-to-end, real HTTP + real database)", () => {
@@ -279,7 +239,6 @@ describe("GET /maps/:id (end-to-end, real HTTP + real database)", () => {
   it("returns 200 with empty objectives and edges arrays for a freshly created map", async () => {
     const createResponse = await request(app).post("/maps").send({
       name: "Empty Map",
-      type: "Project",
     });
     createdIds.push(createResponse.body.id);
 
@@ -289,7 +248,6 @@ describe("GET /maps/:id (end-to-end, real HTTP + real database)", () => {
     expect(response.body).toMatchObject({
       id: createResponse.body.id,
       name: "Empty Map",
-      type: "Project",
     });
     expect(response.body.objectives).toEqual([]);
     expect(response.body.edges).toEqual([]);
@@ -298,7 +256,6 @@ describe("GET /maps/:id (end-to-end, real HTTP + real database)", () => {
   it("returns 200 with the map's objectives populated, including a task objective's counter relation", async () => {
     const createResponse = await request(app).post("/maps").send({
       name: "Populated Objectives Map",
-      type: "Project",
     });
     const mapId = createResponse.body.id as number;
     createdIds.push(mapId);
@@ -347,7 +304,6 @@ describe("GET /maps/:id (end-to-end, real HTTP + real database)", () => {
   it("returns 200 with edges reflecting ObjectiveEdge rows connecting the map's objectives", async () => {
     const createResponse = await request(app).post("/maps").send({
       name: "Populated Edges Map",
-      type: "Project",
     });
     const mapId = createResponse.body.id as number;
     createdIds.push(mapId);

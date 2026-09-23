@@ -92,13 +92,6 @@
   text-overflow: ellipsis;
 }
 
-.map-menu-row-type {
-  font-size: 11px;
-  color: #a3a3a3;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
 .map-menu-edit-icon {
   background: none;
   border: none;

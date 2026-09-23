@@ -179,7 +179,6 @@ export default function MapMenu() {
                   <>
                     <div className="map-menu-row-info">
                       <span className="map-menu-row-name">{map.name}</span>
-                      <span className="map-menu-row-type">{map.type}</span>
                     </div>
                     <button
                       type="button"

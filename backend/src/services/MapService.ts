@@ -1,6 +1,5 @@
 import prisma from "../lib/prisma";
 import {
-  MapType,
   Map,
   Objective,
   ObjectiveCounter,
@@ -8,11 +7,9 @@ import {
 } from "../generated/prisma/client";
 
 const NAME_WORD_LIMIT = 10;
-const VALID_MAP_TYPES = Object.values(MapType);
 
 export interface CreateMapInput {
   name: string;
-  type: MapType;
 }
 
 // Shared name validation for both createMap and updateMap. A map name is
@@ -37,20 +34,13 @@ function validateMapName(name: string): string {
 }
 
 export async function createMap(data: CreateMapInput) {
-  const { type } = data;
-
   // --- Validation (business rules Prisma can't enforce) ---
   const name = validateMapName(data.name);
-
-  if (!VALID_MAP_TYPES.includes(type)) {
-    throw new Error(`type must be one of: ${VALID_MAP_TYPES.join(", ")}`);
-  }
 
   // --- Create ---
   return prisma.map.create({
     data: {
       name,
-      type,
     },
   });
 }
@@ -126,9 +116,7 @@ export async function updateMap(data: UpdateMapInput) {
   const name = validateMapName(data.name);
 
   // --- Update ---
-  // Only name is editable — type is intentionally not accepted here, since
-  // changing a map's structural type after objectives/edges already exist
-  // would require reconciling the existing graph against new rules.
+  // Only name is editable on a map.
   return prisma.map.update({
     where: { id },
     data: { name },

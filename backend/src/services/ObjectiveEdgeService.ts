@@ -27,12 +27,11 @@ export async function createObjectiveEdge(data: CreateObjectiveEdgeInput) {
 
   // --- Existence checks ---
   // Parent is fetched first (per the plan's ordering) so that a missing
-  // parent is reported before we even look at the child. `map` is included
-  // on both because we need `mapId` (cross-map check) and `map.type`
-  // (Habit vs Project rule) further down.
+  // parent is reported before we even look at the child. Only the bare
+  // objective is needed here — `mapId` is a direct scalar field, so there's
+  // no need to include the `map` relation.
   const parentObjective = await prisma.objective.findUnique({
     where: { id: parentId },
-    include: { map: true },
   });
   if (!parentObjective) {
     throw new Error("parent objective not found");
@@ -40,7 +39,6 @@ export async function createObjectiveEdge(data: CreateObjectiveEdgeInput) {
 
   const childObjective = await prisma.objective.findUnique({
     where: { id: childId },
-    include: { map: true },
   });
   if (!childObjective) {
     throw new Error("child objective not found");
@@ -62,20 +60,6 @@ export async function createObjectiveEdge(data: CreateObjectiveEdgeInput) {
   });
   if (existingEdge) {
     throw new Error("this edge already exists");
-  }
-
-  // --- Map-type rule ---
-  // A Habit map represents a single linear routine, so each objective may
-  // only have one incoming edge (one predecessor step). A Project map is a
-  // general DAG and has no such restriction, so we skip the lookup
-  // entirely for Project maps to avoid an unnecessary query.
-  if (parentObjective.map.type === "Habit") {
-    const existingParentEdge = await prisma.objectiveEdge.findFirst({
-      where: { childId },
-    });
-    if (existingParentEdge) {
-      throw new Error("a Habit map objective can only have one parent");
-    }
   }
 
   // --- Cycle detection (BFS) ---

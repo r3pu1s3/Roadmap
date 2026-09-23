@@ -7,10 +7,10 @@ import prisma from "../../../lib/prisma";
 
 // This suite mocks Prisma's deeply-typed client via vitest-mock-extended, and
 // only ever needs a narrow, hand-picked subset of each model's real fields
-// (e.g. `{ id, mapId, map: { type } }` rather than every column) — matching
-// this repo's existing test-file convention (see MapService.test.ts) of
-// using `any` to bridge those minimal fixtures into the deep mock's return
-// types rather than maintaining full Prisma model shapes in every test.
+// (e.g. `{ id, mapId }` rather than every column) — matching this repo's
+// existing test-file convention (see MapService.test.ts) of using `any` to
+// bridge those minimal fixtures into the deep mock's return types rather
+// than maintaining full Prisma model shapes in every test.
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 vi.mock("../../../lib/prisma");
@@ -24,11 +24,7 @@ const CHILD_ID = 2;
 const MAP_ID = 10;
 
 function projectObjective(id: number, mapId = MAP_ID) {
-  return { id, mapId, map: { id: mapId, type: "Project" } } as any;
-}
-
-function habitObjective(id: number, mapId = MAP_ID) {
-  return { id, mapId, map: { id: mapId, type: "Habit" } } as any;
+  return { id, mapId } as any;
 }
 
 // Convenience: wires up the two `objective.findUnique` calls the service
@@ -85,7 +81,6 @@ describe("createObjectiveEdge", () => {
 
     expect(prisma.objective.findUnique).toHaveBeenCalledWith({
       where: { id: PARENT_ID },
-      include: { map: true },
     });
   });
 
@@ -132,52 +127,18 @@ describe("createObjectiveEdge", () => {
     expect(prisma.objectiveEdge.create).not.toHaveBeenCalled();
   });
 
-  // --- Habit map: single-parent rule ---
-  // A Habit map represents a linear routine, so its objectives are only
-  // allowed one incoming edge; a Project map's DAG has no such limit.
+  // --- multiple parents allowed (proves DAG shape, not a tree) ---
+  // Every map behaves as an unconditional DAG now: a child may have any
+  // number of incoming parent edges, with no map-level "single parent"
+  // restriction (there used to be one for Habit maps; that concept and the
+  // `map.type` distinction have been removed entirely).
 
-  it("throws when the map is a Habit map and the child already has a parent", async () => {
-    mockParentAndChild(habitObjective(PARENT_ID), habitObjective(CHILD_ID));
-    prisma.objectiveEdge.findUnique.mockResolvedValue(null); // no exact duplicate
-    // The child already has some existing parent edge (from a different
-    // objective) — that alone is enough to reject a Habit map edge.
-    prisma.objectiveEdge.findFirst.mockResolvedValue({
-      id: 5,
-      parentId: 999,
-      childId: CHILD_ID,
-    } as any);
-
-    await expect(
-      createObjectiveEdge({ parentId: PARENT_ID, childId: CHILD_ID }),
-    ).rejects.toThrow("a Habit map objective can only have one parent");
-
-    expect(prisma.objectiveEdge.findFirst).toHaveBeenCalledWith({
-      where: { childId: CHILD_ID },
-    });
-    expect(prisma.objectiveEdge.create).not.toHaveBeenCalled();
-  });
-
-  it("allows creating the edge on a Habit map when the child has no existing parent", async () => {
-    mockParentAndChild(habitObjective(PARENT_ID), habitObjective(CHILD_ID));
-    prisma.objectiveEdge.findUnique.mockResolvedValue(null);
-    prisma.objectiveEdge.findFirst.mockResolvedValue(null); // child is parentless so far
-    prisma.objectiveEdge.findMany.mockResolvedValue([]); // no cycle either
-    const created = { id: 1, parentId: PARENT_ID, childId: CHILD_ID };
-    prisma.objectiveEdge.create.mockResolvedValue(created as any);
-
-    await expect(
-      createObjectiveEdge({ parentId: PARENT_ID, childId: CHILD_ID }),
-    ).resolves.toStrictEqual(created);
-  });
-
-  // --- Project map: multiple parents allowed (proves DAG shape, not a tree) ---
-
-  it("allows a Project map child to receive a second parent edge", async () => {
+  it("allows a child to receive a second parent edge (DAG, not tree)", async () => {
     mockParentAndChild(projectObjective(PARENT_ID), projectObjective(CHILD_ID));
     prisma.objectiveEdge.findUnique.mockResolvedValue(null);
-    // Unlike the Habit case, a Project map never even consults findFirst
-    // for a single-parent check — the child already has an existing
-    // parent edge, but that must NOT block the new one.
+    // The service never consults findFirst for a single-parent check — the
+    // child already has an existing parent edge, but that must NOT block
+    // the new one, since the DAG allows any number of parents.
     prisma.objectiveEdge.findMany.mockResolvedValue([]); // no cycle
     const created = { id: 2, parentId: PARENT_ID, childId: CHILD_ID };
     prisma.objectiveEdge.create.mockResolvedValue(created as any);

@@ -32,9 +32,9 @@ function createDeferred<T>() {
 }
 
 const maps: MapResponse[] = [
-  { id: 1, name: "Fitness Goals", type: "Project" },
-  { id: 2, name: "Daily Habits", type: "Habit" },
-  { id: 3, name: "Reading List", type: "Project" },
+  { id: 1, name: "Fitness Goals" },
+  { id: 2, name: "Daily Habits" },
+  { id: 3, name: "Reading List" },
 ];
 
 function renderMenu() {
@@ -147,7 +147,7 @@ describe("MapMenu", () => {
 
   // --- rendering the list ---
 
-  it("renders one .map-menu-row per map, in the order returned by getMaps(), with name and type", async () => {
+  it("renders one .map-menu-row per map, in the order returned by getMaps(), with name", async () => {
     mockedGetMaps.mockResolvedValue(maps);
     const { container } = renderMenu();
 
@@ -160,11 +160,6 @@ describe("MapMenu", () => {
       container.querySelectorAll(".map-menu-row-name"),
     ).map((el) => el.textContent);
     expect(names).toEqual(["Fitness Goals", "Daily Habits", "Reading List"]);
-
-    const types = Array.from(
-      container.querySelectorAll(".map-menu-row-type"),
-    ).map((el) => el.textContent);
-    expect(types).toEqual(["Project", "Habit", "Project"]);
   });
 
   // --- row navigation ---
@@ -261,7 +256,6 @@ describe("MapMenu", () => {
     mockedUpdateMap.mockResolvedValue({
       id: 1,
       name: "Fitness Goals 2.0",
-      type: "Habit",
     });
     renderMenu();
 
@@ -339,7 +333,7 @@ describe("MapMenu", () => {
 
     expect(screen.getByText("Save")).toBeDisabled();
 
-    deferred.resolve({ id: 1, name: "Renamed While Saving", type: "Project" });
+    deferred.resolve({ id: 1, name: "Renamed While Saving" });
     await screen.findByText("Renamed While Saving");
   });
 
@@ -380,7 +374,7 @@ describe("MapMenu", () => {
     await user.clear(input);
     await user.type(input, "Garbled Text For Row A Only");
 
-    // Row B (Daily Habits) is untouched: still shows its normal name/type,
+    // Row B (Daily Habits) is untouched: still shows its normal name,
     // and has no edit controls of its own.
     const rowBName = screen.getByText("Daily Habits");
     expect(rowBName).toHaveClass("map-menu-row-name");

@@ -19,7 +19,7 @@ let mapId: number;
 
 beforeAll(async () => {
   const map = await prisma.map.create({
-    data: { name: "ObjectiveController e2e map", type: "Project" },
+    data: { name: "ObjectiveController e2e map" },
   });
   mapId = map.id;
 });

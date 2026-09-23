@@ -41,10 +41,10 @@ describe("createMap controller", () => {
   });
 
   it("returns 201 and the created map on success, with the service called with req.body unmodified", async () => {
-    const fakeMap = { id: 1, name: "My Project", type: "Project" };
+    const fakeMap = { id: 1, name: "My Project" };
     vi.mocked(mapService.createMap).mockResolvedValue(fakeMap as any);
 
-    const body = { name: "My Project", type: "Project" };
+    const body = { name: "My Project" };
     const req = mockRequest(body);
     const res = mockResponse();
 
@@ -60,7 +60,7 @@ describe("createMap controller", () => {
       new Error("name is required"),
     );
 
-    const req = mockRequest({ name: "", type: "Project" });
+    const req = mockRequest({ name: "" });
     const res = mockResponse();
 
     await createMap(req, res);
@@ -75,7 +75,7 @@ describe("createMap controller", () => {
     );
 
     const longName = Array(11).fill("word").join(" ");
-    const req = mockRequest({ name: longName, type: "Project" });
+    const req = mockRequest({ name: longName });
     const res = mockResponse();
 
     await createMap(req, res);
@@ -86,26 +86,10 @@ describe("createMap controller", () => {
     });
   });
 
-  it("returns 400 when type is invalid", async () => {
-    vi.mocked(mapService.createMap).mockRejectedValue(
-      new Error("type must be one of: Project, Habit"),
-    );
-
-    const req = mockRequest({ name: "Valid Name", type: "Bogus" });
-    const res = mockResponse();
-
-    await createMap(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json).toHaveBeenCalledWith({
-      error: "type must be one of: Project, Habit",
-    });
-  });
-
   it("returns 500 for an unexpected non-Error rejection", async () => {
     vi.mocked(mapService.createMap).mockRejectedValue("unexpected failure");
 
-    const req = mockRequest({ name: "Valid Name", type: "Project" });
+    const req = mockRequest({ name: "Valid Name" });
     const res = mockResponse();
 
     await createMap(req, res);
@@ -137,12 +121,11 @@ describe("updateMap controller", () => {
     expect(mapService.updateMap).not.toHaveBeenCalled();
   });
 
-  // Stray fields (e.g. a client-sent "type") must be dropped — updateMap
-  // only ever accepts { id, name }, since type is not editable.
+  // Stray fields must be dropped — updateMap only ever accepts { id, name }.
   it("calls the service with { id: parsedNumber, name } for a valid numeric id, dropping any other body fields", async () => {
     vi.mocked(mapService.updateMap).mockResolvedValue({ id: 1 } as any);
 
-    const req = mockRequest({ name: "New Name", type: "Habit" }, { id: "1" });
+    const req = mockRequest({ name: "New Name", extra: "field" }, { id: "1" });
     const res = mockResponse();
 
     await updateMap(req, res);
@@ -156,7 +139,7 @@ describe("updateMap controller", () => {
   // --- success ---
 
   it("returns 200 and the updated map on success", async () => {
-    const fakeUpdated = { id: 1, name: "New Name", type: "Project" };
+    const fakeUpdated = { id: 1, name: "New Name" };
     vi.mocked(mapService.updateMap).mockResolvedValue(fakeUpdated as any);
 
     const req = mockRequest({ name: "New Name" }, { id: "1" });
@@ -241,8 +224,8 @@ describe("getMaps controller", () => {
 
   it("returns 200 and the array of maps on success", async () => {
     const fakeMaps = [
-      { id: 1, name: "First", type: "Project" },
-      { id: 2, name: "Second", type: "Habit" },
+      { id: 1, name: "First" },
+      { id: 2, name: "Second" },
     ];
     vi.mocked(mapService.getMaps).mockResolvedValue(fakeMaps as any);
 
@@ -297,7 +280,6 @@ describe("getMap controller", () => {
     const fakeMap = {
       id: 1,
       name: "My Map",
-      type: "Project",
       objectives: [
         {
           id: 10,

@@ -12,19 +12,19 @@ app.use(express.json());
 app.post("/objective-edges", createObjectiveEdge);
 app.delete("/objective-edges/:id", deleteObjectiveEdge);
 
-// Two real Map rows — one of each MapType, since the plan's "one parent per
-// child" rule is Habit-only, while Project maps allow multiple parents (as
-// long as no cycle forms). Every Objective below is scoped to one of these.
-let projectMapId: number;
-let habitMapId: number;
+// Two real Map rows — maps no longer have a type distinction, every map is
+// an unconditional general DAG. The second map exists purely so the
+// cross-map rejection test has two ordinary maps to prove an edge can't
+// span between them. Every Objective below is scoped to one of these.
+let mapId: number;
+let otherMapId: number;
 
 // Keyed by a descriptive name so each test can grab exactly the fixture(s)
 // it needs without accidentally reusing an objective/edge another test
 // already mutated (edges have a unique (parentId, childId) key, and cycle
 // detection is stateful across the whole DAG, so cross-test reuse would
 // produce order-dependent false failures).
-const project: Record<string, number> = {};
-const habit: Record<string, number> = {};
+const objectives: Record<string, number> = {};
 
 async function makeObjective(mapId: number, description: string) {
   const objective = await prisma.objective.create({
@@ -34,19 +34,19 @@ async function makeObjective(mapId: number, description: string) {
 }
 
 beforeAll(async () => {
-  const projectMap = await prisma.map.create({
-    data: { name: "ObjectiveEdge e2e project map", type: "Project" },
+  const map = await prisma.map.create({
+    data: { name: "ObjectiveEdge e2e map" },
   });
-  projectMapId = projectMap.id;
+  mapId = map.id;
 
-  const habitMap = await prisma.map.create({
-    data: { name: "ObjectiveEdge e2e habit map", type: "Habit" },
+  const otherMap = await prisma.map.create({
+    data: { name: "ObjectiveEdge e2e other map" },
   });
-  habitMapId = habitMap.id;
+  otherMapId = otherMap.id;
 
-  // Project-map fixtures, one dedicated set of objectives per scenario so
+  // Primary-map fixtures, one dedicated set of objectives per scenario so
   // tests can run in any order without interfering with each other's edges.
-  const projectSpecs = [
+  const specs = [
     "simpleA",
     "simpleB",
     "multiParentA",
@@ -67,15 +67,15 @@ beforeAll(async () => {
     "deleteExisting",
     "deleteExistingParent",
   ];
-  for (const name of projectSpecs) {
-    project[name] = await makeObjective(projectMapId, `project:${name}`);
+  for (const name of specs) {
+    objectives[name] = await makeObjective(mapId, `objective:${name}`);
   }
 
-  // Habit-map fixtures for the single-parent rule.
-  const habitSpecs = ["parent1", "parent2", "child", "crossMapHabitSide"];
-  for (const name of habitSpecs) {
-    habit[name] = await makeObjective(habitMapId, `habit:${name}`);
-  }
+  // Secondary-map fixture, used only to prove cross-map edges are rejected.
+  objectives.crossMapOtherSide = await makeObjective(
+    otherMapId,
+    "objective:crossMapOtherSide",
+  );
 });
 
 afterAll(async () => {
@@ -84,8 +84,8 @@ afterAll(async () => {
   // rows still pointing at them (ObjectiveEdge.parentId/childId -> Objective
   // are both onDelete: Cascade) — this is the same cascade behavior
   // exercised deliberately in the "cascade documentation" test below.
-  await prisma.map.delete({ where: { id: projectMapId } });
-  await prisma.map.delete({ where: { id: habitMapId } });
+  await prisma.map.delete({ where: { id: mapId } });
+  await prisma.map.delete({ where: { id: otherMapId } });
 });
 
 // Edges created inside individual tests (as opposed to the fixture
@@ -104,36 +104,37 @@ afterEach(async () => {
 });
 
 describe("POST /objective-edges (end-to-end, real HTTP + real database)", () => {
-  it("creates an edge between two objectives in a Project map and returns 201", async () => {
+  it("creates an edge between two objectives and returns 201", async () => {
     const response = await request(app).post("/objective-edges").send({
-      parentId: project.simpleA,
-      childId: project.simpleB,
+      parentId: objectives.simpleA,
+      childId: objectives.simpleB,
     });
 
     expect(response.status).toBe(201);
     expect(response.body).toMatchObject({
-      parentId: project.simpleA,
-      childId: project.simpleB,
+      parentId: objectives.simpleA,
+      childId: objectives.simpleB,
     });
     expect(response.body.id).toEqual(expect.any(Number));
     createdEdgeIds.push(response.body.id);
   });
 
-  // Project maps explicitly allow a child to have more than one parent, as
-  // long as the result stays acyclic — this is the key behavioral
-  // difference from Habit maps, so it needs its own DAG-shaped fixture
-  // (two parents feeding the same child) rather than a simple pair.
-  it("allows a child to gain a second parent within a Project map (multi-parent DAG)", async () => {
+  // Every map explicitly allows a child to have more than one parent, as
+  // long as the result stays acyclic — this is the default (and only)
+  // behavior now that maps no longer distinguish a stricter single-parent
+  // type, so it needs its own DAG-shaped fixture (two parents feeding the
+  // same child) rather than a simple pair.
+  it("allows a child to gain a second parent (multi-parent DAG)", async () => {
     const first = await request(app).post("/objective-edges").send({
-      parentId: project.multiParentA,
-      childId: project.multiParentChild,
+      parentId: objectives.multiParentA,
+      childId: objectives.multiParentChild,
     });
     expect(first.status).toBe(201);
     createdEdgeIds.push(first.body.id);
 
     const second = await request(app).post("/objective-edges").send({
-      parentId: project.multiParentB,
-      childId: project.multiParentChild,
+      parentId: objectives.multiParentB,
+      childId: objectives.multiParentChild,
     });
     expect(second.status).toBe(201);
     createdEdgeIds.push(second.body.id);
@@ -142,41 +143,12 @@ describe("POST /objective-edges (end-to-end, real HTTP + real database)", () => 
     // response alone — the whole point of the multi-parent rule is that the
     // second insert must not silently overwrite or reject the first.
     const persisted = await prisma.objectiveEdge.findMany({
-      where: { childId: project.multiParentChild },
+      where: { childId: objectives.multiParentChild },
     });
     expect(persisted).toHaveLength(2);
     expect(persisted.map((e) => e.parentId).sort()).toEqual(
-      [project.multiParentA, project.multiParentB].sort(),
+      [objectives.multiParentA, objectives.multiParentB].sort(),
     );
-  });
-
-  // Habit maps enforce a stricter "one parent per child" rule than Project
-  // maps (a habit is meant to be a simple chain/tree, not a DAG), so a
-  // second parent for the same child must be rejected outright.
-  it("rejects a second parent for the same child in a Habit map", async () => {
-    const first = await request(app).post("/objective-edges").send({
-      parentId: habit.parent1,
-      childId: habit.child,
-    });
-    expect(first.status).toBe(201);
-    createdEdgeIds.push(first.body.id);
-
-    const second = await request(app).post("/objective-edges").send({
-      parentId: habit.parent2,
-      childId: habit.child,
-    });
-    expect(second.status).toBe(400);
-    expect(second.body.error).toBe(
-      "a Habit map objective can only have one parent",
-    );
-
-    // The rejected second edge must never reach the database — only the
-    // first parent/child pair should exist for this child.
-    const persisted = await prisma.objectiveEdge.findMany({
-      where: { childId: habit.child },
-    });
-    expect(persisted).toHaveLength(1);
-    expect(persisted[0].parentId).toBe(habit.parent1);
   });
 
   // Proves the cycle-detection algorithm actually walks the graph rather
@@ -184,21 +156,21 @@ describe("POST /objective-edges (end-to-end, real HTTP + real database)", () => 
   // so B->A would make A reachable from itself.
   it("rejects a direct 2-node cycle (A->B exists, then B->A is attempted)", async () => {
     const forward = await request(app).post("/objective-edges").send({
-      parentId: project.cycle2A,
-      childId: project.cycle2B,
+      parentId: objectives.cycle2A,
+      childId: objectives.cycle2B,
     });
     expect(forward.status).toBe(201);
     createdEdgeIds.push(forward.body.id);
 
     const backward = await request(app).post("/objective-edges").send({
-      parentId: project.cycle2B,
-      childId: project.cycle2A,
+      parentId: objectives.cycle2B,
+      childId: objectives.cycle2A,
     });
     expect(backward.status).toBe(400);
     expect(backward.body.error).toBe("adding this edge would create a cycle");
 
     const persisted = await prisma.objectiveEdge.findMany({
-      where: { parentId: project.cycle2B, childId: project.cycle2A },
+      where: { parentId: objectives.cycle2B, childId: objectives.cycle2A },
     });
     expect(persisted).toHaveLength(0);
   });
@@ -209,28 +181,28 @@ describe("POST /objective-edges (end-to-end, real HTTP + real database)", () => 
   // two endpoints being connected.
   it("rejects a 3-node cycle (A->B, B->C, then C->A is attempted)", async () => {
     const ab = await request(app).post("/objective-edges").send({
-      parentId: project.cycle3A,
-      childId: project.cycle3B,
+      parentId: objectives.cycle3A,
+      childId: objectives.cycle3B,
     });
     expect(ab.status).toBe(201);
     createdEdgeIds.push(ab.body.id);
 
     const bc = await request(app).post("/objective-edges").send({
-      parentId: project.cycle3B,
-      childId: project.cycle3C,
+      parentId: objectives.cycle3B,
+      childId: objectives.cycle3C,
     });
     expect(bc.status).toBe(201);
     createdEdgeIds.push(bc.body.id);
 
     const ca = await request(app).post("/objective-edges").send({
-      parentId: project.cycle3C,
-      childId: project.cycle3A,
+      parentId: objectives.cycle3C,
+      childId: objectives.cycle3A,
     });
     expect(ca.status).toBe(400);
     expect(ca.body.error).toBe("adding this edge would create a cycle");
 
     const persisted = await prisma.objectiveEdge.findMany({
-      where: { parentId: project.cycle3C, childId: project.cycle3A },
+      where: { parentId: objectives.cycle3C, childId: objectives.cycle3A },
     });
     expect(persisted).toHaveLength(0);
   });
@@ -238,7 +210,7 @@ describe("POST /objective-edges (end-to-end, real HTTP + real database)", () => 
   it("returns 404 when parentId does not reference an existing objective", async () => {
     const response = await request(app).post("/objective-edges").send({
       parentId: 999999999,
-      childId: project.notFoundRef,
+      childId: objectives.notFoundRef,
     });
 
     expect(response.status).toBe(404);
@@ -247,7 +219,7 @@ describe("POST /objective-edges (end-to-end, real HTTP + real database)", () => 
 
   it("returns 404 when childId does not reference an existing objective", async () => {
     const response = await request(app).post("/objective-edges").send({
-      parentId: project.notFoundRef,
+      parentId: objectives.notFoundRef,
       childId: 999999999,
     });
 
@@ -257,22 +229,21 @@ describe("POST /objective-edges (end-to-end, real HTTP + real database)", () => 
 
   it("returns 400 when parentId and childId are the same objective", async () => {
     const response = await request(app).post("/objective-edges").send({
-      parentId: project.selfRef,
-      childId: project.selfRef,
+      parentId: objectives.selfRef,
+      childId: objectives.selfRef,
     });
 
     expect(response.status).toBe(400);
     expect(response.body.error).toBe("an objective cannot be its own parent");
   });
 
-  // Edges are meaningless across two unrelated maps — a Project map's DAG
-  // and a Habit map's tree are independent structures, so mixing endpoints
-  // from different maps must be rejected regardless of cycle/parent-count
-  // rules.
+  // Edges are meaningless across two unrelated maps — each map's DAG is an
+  // independent structure, so mixing endpoints from different maps must be
+  // rejected regardless of cycle/parent-count rules.
   it("returns 400 when parent and child objectives belong to different maps", async () => {
     const response = await request(app).post("/objective-edges").send({
-      parentId: project.crossMapProjectSide,
-      childId: habit.crossMapHabitSide,
+      parentId: objectives.crossMapProjectSide,
+      childId: objectives.crossMapOtherSide,
     });
 
     expect(response.status).toBe(400);
@@ -283,15 +254,15 @@ describe("POST /objective-edges (end-to-end, real HTTP + real database)", () => 
 
   it("returns 400 and creates nothing on a duplicate (parentId, childId) pair", async () => {
     const first = await request(app).post("/objective-edges").send({
-      parentId: project.dupA,
-      childId: project.dupB,
+      parentId: objectives.dupA,
+      childId: objectives.dupB,
     });
     expect(first.status).toBe(201);
     createdEdgeIds.push(first.body.id);
 
     const duplicate = await request(app).post("/objective-edges").send({
-      parentId: project.dupA,
-      childId: project.dupB,
+      parentId: objectives.dupA,
+      childId: objectives.dupB,
     });
     expect(duplicate.status).toBe(400);
     expect(duplicate.body.error).toBe("this edge already exists");
@@ -299,7 +270,7 @@ describe("POST /objective-edges (end-to-end, real HTTP + real database)", () => 
     // The unique (parentId, childId) constraint means a second insert
     // attempt must not create a second row alongside the first.
     const persisted = await prisma.objectiveEdge.findMany({
-      where: { parentId: project.dupA, childId: project.dupB },
+      where: { parentId: objectives.dupA, childId: objectives.dupB },
     });
     expect(persisted).toHaveLength(1);
   });
@@ -308,8 +279,8 @@ describe("POST /objective-edges (end-to-end, real HTTP + real database)", () => 
 describe("DELETE /objective-edges/:id (end-to-end, real HTTP + real database)", () => {
   it("deletes an existing edge and returns 200", async () => {
     const created = await request(app).post("/objective-edges").send({
-      parentId: project.deleteExistingParent,
-      childId: project.deleteExisting,
+      parentId: objectives.deleteExistingParent,
+      childId: objectives.deleteExisting,
     });
     expect(created.status).toBe(201);
     const edgeId = created.body.id as number;
@@ -351,19 +322,19 @@ describe("Database cascade behavior (real database, existing schema — not new 
   // when an objective is deleted elsewhere in the app.
   it("cascades: deleting one of an edge's objectives also deletes the edge", async () => {
     const created = await request(app).post("/objective-edges").send({
-      parentId: project.cascadeA,
-      childId: project.cascadeB,
+      parentId: objectives.cascadeA,
+      childId: objectives.cascadeB,
     });
     expect(created.status).toBe(201);
     const edgeId = created.body.id as number;
 
-    await prisma.objective.delete({ where: { id: project.cascadeA } });
+    await prisma.objective.delete({ where: { id: objectives.cascadeA } });
 
     const fromDb = await prisma.objectiveEdge.findUnique({
       where: { id: edgeId },
     });
     expect(fromDb).toBeNull();
-    // project.cascadeA is now gone from the database; it's excluded from
+    // objectives.cascadeA is now gone from the database; it's excluded from
     // any later reuse in this file (it isn't referenced by any other test).
   });
 });

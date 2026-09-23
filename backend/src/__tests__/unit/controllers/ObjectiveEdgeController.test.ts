@@ -143,22 +143,6 @@ describe("createObjectiveEdge controller", () => {
     });
   });
 
-  it("returns 400 for a Habit map single-parent rejection", async () => {
-    vi.mocked(objectiveEdgeService.createObjectiveEdge).mockRejectedValue(
-      new Error("a Habit map objective can only have one parent"),
-    );
-
-    const req = mockRequest({ parentId: 1, childId: 2 });
-    const res = mockResponse();
-
-    await createObjectiveEdge(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json).toHaveBeenCalledWith({
-      error: "a Habit map objective can only have one parent",
-    });
-  });
-
   it("returns 400 for a cycle rejection", async () => {
     vi.mocked(objectiveEdgeService.createObjectiveEdge).mockRejectedValue(
       new Error("adding this edge would create a cycle"),
