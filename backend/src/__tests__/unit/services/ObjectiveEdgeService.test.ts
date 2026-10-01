@@ -23,8 +23,63 @@ const PARENT_ID = 1;
 const CHILD_ID = 2;
 const MAP_ID = 10;
 
+// Deadlines are mandatory on every Objective, including at the DB level
+// going forward (a follow-up migration makes the columns NOT NULL once
+// legacy rows are cleaned up), so even fixtures for tests that aren't
+// concerned with deadline rules must carry real dates. These two objectives
+// share an identical, wide default interval and default to isTask: false,
+// which trivially satisfies both the sequencing and umbrella rules against
+// each other (equal intervals; boundary-touching is inclusive) -- so
+// cross-map / duplicate-edge / cycle-detection tests can stay entirely
+// unconcerned with deadlines.
+const DEFAULT_DEADLINE_START = new Date("2026-01-01T00:00:00.000Z");
+const DEFAULT_DEADLINE_END = new Date("2026-12-31T00:00:00.000Z");
+
 function projectObjective(id: number, mapId = MAP_ID) {
-  return { id, mapId } as any;
+  return {
+    id,
+    mapId,
+    isTask: false,
+    description: `objective-${id}`,
+    deadlineStart: DEFAULT_DEADLINE_START,
+    deadlineEnd: DEFAULT_DEADLINE_END,
+  } as any;
+}
+
+// --- deadline-aware fixtures -------------------------------------------
+// For tests that DO care about deadline rules, this lets each objective's
+// isTask/interval be set explicitly. This mirrors the DeadlineNode shape
+// expected by ObjectiveDeadlineService.checkDeadlinePair / validateEdgeDeadlines.
+function deadlineObjective(
+  id: number,
+  isTask: boolean,
+  deadlineStart: Date,
+  deadlineEnd: Date,
+  mapId = MAP_ID,
+) {
+  return {
+    id,
+    mapId,
+    isTask,
+    description: `objective-${id}`,
+    deadlineStart,
+    deadlineEnd,
+  } as any;
+}
+
+const D1 = new Date("2026-01-01T00:00:00.000Z");
+const D5 = new Date("2026-01-05T00:00:00.000Z");
+const D6 = new Date("2026-01-06T00:00:00.000Z");
+const D10 = new Date("2026-01-10T00:00:00.000Z");
+const D15 = new Date("2026-01-15T00:00:00.000Z");
+const D20 = new Date("2026-01-20T00:00:00.000Z");
+
+// Simulates a graph with no edges beyond the one being proposed: this
+// satisfies both the pre-existing cycle-detection BFS (no cycle found) and
+// ObjectiveDeadlineService's ancestor/descendant walks (no extra nodes),
+// isolating each test to just the direct parent/child pair.
+function mockNoExtraEdges() {
+  prisma.objectiveEdge.findMany.mockResolvedValue([]);
 }
 
 // Convenience: wires up the two `objective.findUnique` calls the service
@@ -229,9 +284,14 @@ describe("createObjectiveEdge", () => {
     // is not the proposed childId P, so it keeps walking; level 2 finds
     // nothing further upstream of R, so the frontier empties out and the
     // BFS correctly concludes there is no cycle.
+    // Deadlines are now mandatory, so this edge reaching creation also
+    // triggers deadline-propagation's own ancestor/descendant graph walk
+    // (unrelated to cycle-detection) -- any calls beyond the two levels
+    // below fall back to this persistent empty result.
     prisma.objectiveEdge.findMany
       .mockResolvedValueOnce([{ parentId: R }])
-      .mockResolvedValueOnce([]);
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([]);
     const created = { id: 3, parentId: Q, childId: P };
     prisma.objectiveEdge.create.mockResolvedValue(created as any);
 
@@ -239,7 +299,17 @@ describe("createObjectiveEdge", () => {
       createObjectiveEdge({ parentId: Q, childId: P }),
     ).resolves.toStrictEqual(created);
 
-    expect(prisma.objectiveEdge.findMany).toHaveBeenCalledTimes(2);
+    // Pin the two cycle-detection BFS levels specifically, by position --
+    // the *total* call count to this mock is no longer exactly 2, since
+    // deadline-propagation's separate graph walk also consumes it now.
+    expect(prisma.objectiveEdge.findMany).toHaveBeenNthCalledWith(1, {
+      where: { childId: { in: [Q] } },
+      select: { parentId: true },
+    });
+    expect(prisma.objectiveEdge.findMany).toHaveBeenNthCalledWith(2, {
+      where: { childId: { in: [R] } },
+      select: { parentId: true },
+    });
     expect(prisma.objectiveEdge.create).toHaveBeenCalledWith({
       data: { parentId: Q, childId: P },
     });
@@ -267,6 +337,62 @@ describe("createObjectiveEdge", () => {
       data: { parentId: PARENT_ID, childId: CHILD_ID },
     });
     expect(result).toStrictEqual(created);
+  });
+
+  // --- deadline propagation validation ---
+  // After the existing cycle-detection BFS above (unchanged), a proposed
+  // edge (childId upstream, parentId downstream) must also be checked
+  // against ObjectiveDeadlineService's two rules, scoped to
+  // ancestors(childId) ∪ descendants(parentId). These tests isolate the
+  // direct parent/child pair itself (no further ancestors/descendants) —
+  // multi-hop propagation is covered in ObjectiveDeadlineService.test.ts.
+
+  it("rejects a new edge when the direct parent/child pair violates the sequencing rule (downstream parent isTask: true)", async () => {
+    // Parent is a task starting D5; child (upstream) doesn't end until D6.
+    mockParentAndChild(
+      deadlineObjective(PARENT_ID, true, D5, D10),
+      deadlineObjective(CHILD_ID, false, D1, D6),
+    );
+    prisma.objectiveEdge.findUnique.mockResolvedValue(null);
+    mockNoExtraEdges();
+
+    await expect(
+      createObjectiveEdge({ parentId: PARENT_ID, childId: CHILD_ID }),
+    ).rejects.toThrow();
+
+    expect(prisma.objectiveEdge.create).not.toHaveBeenCalled();
+  });
+
+  it("creates the edge when the direct parent/child pair satisfies the sequencing rule", async () => {
+    mockParentAndChild(
+      deadlineObjective(PARENT_ID, true, D10, D15),
+      deadlineObjective(CHILD_ID, false, D1, D5),
+    );
+    prisma.objectiveEdge.findUnique.mockResolvedValue(null);
+    mockNoExtraEdges();
+    const created = { id: 5, parentId: PARENT_ID, childId: CHILD_ID };
+    prisma.objectiveEdge.create.mockResolvedValue(created as any);
+
+    await expect(
+      createObjectiveEdge({ parentId: PARENT_ID, childId: CHILD_ID }),
+    ).resolves.toStrictEqual(created);
+  });
+
+  it("rejects a new edge when the direct parent/child pair violates the umbrella rule (downstream parent isTask: false)", async () => {
+    // Parent is a goal spanning D1-D15; child (upstream) ends D20, which
+    // isn't contained within the parent's interval.
+    mockParentAndChild(
+      deadlineObjective(PARENT_ID, false, D1, D15),
+      deadlineObjective(CHILD_ID, false, D5, D20),
+    );
+    prisma.objectiveEdge.findUnique.mockResolvedValue(null);
+    mockNoExtraEdges();
+
+    await expect(
+      createObjectiveEdge({ parentId: PARENT_ID, childId: CHILD_ID }),
+    ).rejects.toThrow();
+
+    expect(prisma.objectiveEdge.create).not.toHaveBeenCalled();
   });
 });
 
@@ -306,5 +432,29 @@ describe("deleteObjectiveEdge", () => {
       where: { id: 1 },
     });
     expect(result).toStrictEqual(deleted);
+  });
+
+  // --- no revalidation on deletion ---
+  // Removing a dependency only relaxes constraints (fewer ancestors/
+  // descendants to satisfy), so deletion must never trigger the deadline
+  // propagation graph walk or any extra objective lookups.
+
+  it("does not perform any deadline revalidation when deleting an edge", async () => {
+    prisma.objectiveEdge.findUnique.mockResolvedValue({
+      id: 1,
+      parentId: PARENT_ID,
+      childId: CHILD_ID,
+    } as any);
+    prisma.objectiveEdge.delete.mockResolvedValue({
+      id: 1,
+      parentId: PARENT_ID,
+      childId: CHILD_ID,
+    } as any);
+
+    await deleteObjectiveEdge(1);
+
+    expect(prisma.objectiveEdge.findMany).not.toHaveBeenCalled();
+    expect(prisma.objective.findMany).not.toHaveBeenCalled();
+    expect(prisma.objective.findUnique).not.toHaveBeenCalled();
   });
 });

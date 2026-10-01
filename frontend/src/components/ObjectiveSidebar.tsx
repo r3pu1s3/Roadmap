@@ -4,9 +4,14 @@ import ObjectiveSidebarShell from "./ObjectiveSidebarShell";
 export interface ObjectiveFormData {
   isTask: boolean;
   description: string;
+  // Full ISO 8601 strings (converted from the raw <input type="datetime-local">
+  // values at submit time) — the server expects/persists ISO timestamps, and
+  // converting here keeps the raw local-time strings purely a UI concern.
+  deadlineStart: string;
+  deadlineEnd: string;
 }
 
-type Step = "type" | "description";
+type Step = "type" | "description" | "deadline";
 
 interface ObjectiveSidebarProps {
   isOpen: boolean;
@@ -32,6 +37,11 @@ export default function ObjectiveSidebar({
   const [step, setStep] = useState<Step>("type");
   const [isTask, setIsTask] = useState<boolean | null>(null);
   const [description, setDescription] = useState("");
+  // Raw <input type="datetime-local"> strings (e.g. "2026-08-21T14:30"), kept
+  // as-is in state so the inputs stay controlled; converted to ISO 8601 only
+  // at submit time (see handleSubmit).
+  const [deadlineStart, setDeadlineStart] = useState("");
+  const [deadlineEnd, setDeadlineEnd] = useState("");
 
   function selectType(value: boolean) {
     setIsTask(value);
@@ -40,13 +50,30 @@ export default function ObjectiveSidebar({
   }
 
   function handleBack() {
-    setStep("type");
+    setStep(step === "deadline" ? "description" : "type");
+  }
+
+  function handleNext() {
+    setStep("deadline");
   }
 
   function handleSubmit() {
     if (isTask === null) return; // guard — shouldn't happen since step order enforces this
-    onSubmit({ isTask, description });
+    onSubmit({
+      isTask,
+      description,
+      deadlineStart: new Date(deadlineStart).toISOString(),
+      deadlineEnd: new Date(deadlineEnd).toISOString(),
+    });
   }
+
+  // Deliberately loose client-side check (start <= end only) — the server
+  // enforces the real "at least 60s apart" rule and reports violations via
+  // errorMessage. Equal start/end must remain enabled here.
+  const deadlinesValid =
+    deadlineStart.length > 0 &&
+    deadlineEnd.length > 0 &&
+    new Date(deadlineStart) <= new Date(deadlineEnd);
 
   const title = `New ${step === "type" ? "node" : isTask ? "task" : "objective"}`;
 
@@ -59,10 +86,14 @@ export default function ObjectiveSidebar({
       errorMessage={errorMessage}
       secondaryLabel={step === "type" ? "Cancel" : "Back"}
       onSecondaryClick={step === "type" ? onClose : handleBack}
-      showPrimary={step === "description"}
-      primaryLabel="Submit"
-      primaryDisabled={description.trim().length === 0}
-      onPrimaryClick={handleSubmit}
+      showPrimary={step !== "type"}
+      primaryLabel={step === "description" ? "Next" : "Submit"}
+      primaryDisabled={
+        step === "description"
+          ? description.trim().length === 0
+          : !deadlinesValid
+      }
+      onPrimaryClick={step === "description" ? handleNext : handleSubmit}
     >
       {step === "type" && (
         <>
@@ -105,6 +136,42 @@ export default function ObjectiveSidebar({
             }
             rows={6}
             autoFocus
+          />
+        </>
+      )}
+
+      {step === "deadline" && (
+        <>
+          <label className="obj-form-label">Deadline</label>
+          <label
+            className="obj-form-label"
+            htmlFor="obj-form-deadline-start"
+            style={{ marginTop: 6 }}
+          >
+            Deadline start
+          </label>
+          <input
+            id="obj-form-deadline-start"
+            className="obj-form-input"
+            type="datetime-local"
+            value={deadlineStart}
+            onChange={(e) => setDeadlineStart(e.target.value)}
+            autoFocus
+          />
+
+          <label
+            className="obj-form-label"
+            htmlFor="obj-form-deadline-end"
+            style={{ marginTop: 16 }}
+          >
+            Deadline end
+          </label>
+          <input
+            id="obj-form-deadline-end"
+            className="obj-form-input"
+            type="datetime-local"
+            value={deadlineEnd}
+            onChange={(e) => setDeadlineEnd(e.target.value)}
           />
         </>
       )}

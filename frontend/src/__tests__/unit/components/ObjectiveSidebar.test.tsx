@@ -1,7 +1,37 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import ObjectiveSidebar from "../../../components/ObjectiveSidebar";
+
+// Deadline contract (required fields on their own step, reached via "Next"
+// after the description step — creation is a three-step flow:
+// type -> description -> deadline):
+//   - Two <input type="datetime-local"> fields, each associated to a
+//     <label> via htmlFor/id, with label text matching /deadline start/i
+//     and /deadline end/i respectively (queryable via getByLabelText).
+//   - datetime-local inputs don't play well with userEvent.type's per-key
+//     typing model, so we drive them with fireEvent.change directly, same
+//     as the raw string the browser would hand the change handler (e.g.
+//     "2026-08-21T14:30").
+function fillDeadlines(startValue: string, endValue: string) {
+  fireEvent.change(screen.getByLabelText(/deadline start/i), {
+    target: { value: startValue },
+  });
+  fireEvent.change(screen.getByLabelText(/deadline end/i), {
+    target: { value: endValue },
+  });
+}
+
+// Drives the sidebar from the just-selected type step through the
+// description step to the deadline step, typing `description` along the
+// way and clicking "Next". Assumes a type has already been selected.
+async function goToDeadlineStep(
+  user: ReturnType<typeof userEvent.setup>,
+  description: string,
+) {
+  await user.type(screen.getByRole("textbox"), description);
+  await user.click(screen.getByText("Next"));
+}
 
 describe("ObjectiveSidebar", () => {
   // Vitest is configured without `test.globals: true` (see vite.config.ts), so
@@ -159,7 +189,7 @@ describe("ObjectiveSidebar", () => {
     expect(textarea).toHaveValue("Get stronger");
   });
 
-  it("disables Submit while the description is empty", async () => {
+  it("disables Next while the description is empty", async () => {
     const user = userEvent.setup();
     render(
       <ObjectiveSidebar isOpen={true} onClose={vi.fn()} onSubmit={vi.fn()} />,
@@ -167,10 +197,10 @@ describe("ObjectiveSidebar", () => {
 
     await user.click(screen.getByText("Objective"));
 
-    expect(screen.getByText("Submit")).toBeDisabled();
+    expect(screen.getByText("Next")).toBeDisabled();
   });
 
-  it("enables Submit once a description is entered", async () => {
+  it("enables Next once a description is entered", async () => {
     const user = userEvent.setup();
     render(
       <ObjectiveSidebar isOpen={true} onClose={vi.fn()} onSubmit={vi.fn()} />,
@@ -182,12 +212,72 @@ describe("ObjectiveSidebar", () => {
       "Get stronger",
     );
 
+    expect(screen.getByText("Next")).not.toBeDisabled();
+  });
+
+  // --- deadline step (new, required, reached via Next) ---
+
+  it("advances to the deadline step, with both inputs empty by default, when Next is clicked", async () => {
+    const user = userEvent.setup();
+    render(
+      <ObjectiveSidebar isOpen={true} onClose={vi.fn()} onSubmit={vi.fn()} />,
+    );
+
+    await user.click(screen.getByText("Objective"));
+    await goToDeadlineStep(user, "Get stronger");
+
+    expect(screen.getByText("Deadline")).toBeInTheDocument();
+    expect(screen.getByLabelText(/deadline start/i)).toHaveValue("");
+    expect(screen.getByLabelText(/deadline end/i)).toHaveValue("");
+  });
+
+  it("keeps Submit disabled on the deadline step until both deadlines are set", async () => {
+    const user = userEvent.setup();
+    render(
+      <ObjectiveSidebar isOpen={true} onClose={vi.fn()} onSubmit={vi.fn()} />,
+    );
+
+    await user.click(screen.getByText("Objective"));
+    await goToDeadlineStep(user, "Get stronger");
+
+    expect(screen.getByText("Submit")).toBeDisabled();
+  });
+
+  it("keeps Submit disabled when deadline start is after deadline end", async () => {
+    const user = userEvent.setup();
+    render(
+      <ObjectiveSidebar isOpen={true} onClose={vi.fn()} onSubmit={vi.fn()} />,
+    );
+
+    await user.click(screen.getByText("Objective"));
+    await goToDeadlineStep(user, "Get stronger");
+    // Client-side guard only checks ordering (start <= end); it must reject
+    // start-after-end even though it isn't the server's real >=60s rule.
+    fillDeadlines("2026-08-21T15:30", "2026-08-21T14:30");
+
+    expect(screen.getByText("Submit")).toBeDisabled();
+  });
+
+  it("enables Submit when deadline start exactly equals deadline end", async () => {
+    const user = userEvent.setup();
+    render(
+      <ObjectiveSidebar isOpen={true} onClose={vi.fn()} onSubmit={vi.fn()} />,
+    );
+
+    await user.click(screen.getByText("Objective"));
+    await goToDeadlineStep(user, "Get stronger");
+    // By design the client-side guard is only start <= end (not the
+    // server's real "at least 60s apart" rule), so equal timestamps must
+    // be allowed here — the server is responsible for rejecting these via
+    // errorMessage.
+    fillDeadlines("2026-08-21T14:30", "2026-08-21T14:30");
+
     expect(screen.getByText("Submit")).not.toBeDisabled();
   });
 
   // --- back / cancel navigation ---
 
-  it("returns to the type-selection step when Back is clicked", async () => {
+  it("returns to the type-selection step when Back is clicked from the description step", async () => {
     const user = userEvent.setup();
     render(
       <ObjectiveSidebar isOpen={true} onClose={vi.fn()} onSubmit={vi.fn()} />,
@@ -200,6 +290,24 @@ describe("ObjectiveSidebar", () => {
 
     expect(screen.getByText("New node")).toBeInTheDocument();
     expect(screen.getByText("What kind of node is this?")).toBeInTheDocument();
+  });
+
+  it("returns to the description step, with the typed description preserved, when Back is clicked from the deadline step", async () => {
+    const user = userEvent.setup();
+    render(
+      <ObjectiveSidebar isOpen={true} onClose={vi.fn()} onSubmit={vi.fn()} />,
+    );
+
+    await user.click(screen.getByText("Task"));
+    await goToDeadlineStep(user, "Do {{pushups} pushups");
+    expect(screen.getByText("Deadline")).toBeInTheDocument();
+
+    await user.click(screen.getByText("Back"));
+
+    expect(screen.getByText("Description")).toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText(/do \{pushups\} pushups every morning/i),
+    ).toHaveValue("Do {pushups} pushups");
   });
 
   it("calls onClose when Cancel is clicked on the type-selection step", async () => {
@@ -229,7 +337,7 @@ describe("ObjectiveSidebar", () => {
 
   // --- submit ---
 
-  it("calls onSubmit with the correct isTask and description for an objective", async () => {
+  it("calls onSubmit with the correct isTask, description and ISO deadlines for an objective", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
     render(
@@ -237,19 +345,25 @@ describe("ObjectiveSidebar", () => {
     );
 
     await user.click(screen.getByText("Objective"));
-    await user.type(
-      screen.getByPlaceholderText(/get stronger this year/i),
-      "Get stronger",
-    );
+    await goToDeadlineStep(user, "Get stronger");
+    const startValue = "2026-08-21T14:30";
+    const endValue = "2026-08-21T15:30";
+    fillDeadlines(startValue, endValue);
     await user.click(screen.getByText("Submit"));
 
+    // The raw datetime-local strings must be converted to full ISO 8601
+    // strings (e.g. via `new Date(value).toISOString()`) before onSubmit is
+    // called — computing the expectation the same way keeps this
+    // independent of the test runner's local timezone.
     expect(onSubmit).toHaveBeenCalledWith({
       isTask: false,
       description: "Get stronger",
+      deadlineStart: new Date(startValue).toISOString(),
+      deadlineEnd: new Date(endValue).toISOString(),
     });
   });
 
-  it("calls onSubmit with the correct isTask and description for a task", async () => {
+  it("calls onSubmit with the correct isTask, description and ISO deadlines for a task", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
     render(
@@ -257,18 +371,20 @@ describe("ObjectiveSidebar", () => {
     );
 
     await user.click(screen.getByText("Task"));
-    await user.type(
-      screen.getByPlaceholderText(/do \{pushups\} pushups every morning/i),
-      // userEvent.type interprets `{` as the start of special key syntax
-      // (e.g. `{shift}`); only `{` needs escaping (by doubling), `}` is
-      // already literal outside of a `{...}` block.
-      "Do {{pushups} pushups",
-    );
+    // userEvent.type interprets `{` as the start of special key syntax
+    // (e.g. `{shift}`); only `{` needs escaping (by doubling), `}` is
+    // already literal outside of a `{...}` block.
+    await goToDeadlineStep(user, "Do {{pushups} pushups");
+    const startValue = "2026-09-01T09:00";
+    const endValue = "2026-09-01T09:00"; // equal is allowed client-side
+    fillDeadlines(startValue, endValue);
     await user.click(screen.getByText("Submit"));
 
     expect(onSubmit).toHaveBeenCalledWith({
       isTask: true,
       description: "Do {pushups} pushups",
+      deadlineStart: new Date(startValue).toISOString(),
+      deadlineEnd: new Date(endValue).toISOString(),
     });
   });
 
@@ -299,6 +415,10 @@ describe("ObjectiveSidebar", () => {
     );
 
     await user.click(screen.getByText("Objective"));
+    // isSaving disables the shell's primary button (labeled "Next" on this
+    // step) from the very start, so the deadline step is unreachable here —
+    // that's fine, since isSaving's effect (label swap + disabling) is the
+    // same regardless of which step it's applied on.
 
     expect(screen.getByText("Saving…")).toBeInTheDocument();
     expect(screen.getByText("Saving…")).toBeDisabled();

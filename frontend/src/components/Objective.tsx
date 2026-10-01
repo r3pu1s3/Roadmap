@@ -10,6 +10,10 @@ type ObjectiveProps = {
   data?: {
     id?: number;
     isTask?: boolean | null;
+    // Optional/defensive: the real API always includes this now, but stale
+    // in-memory node data (e.g. from before a save round-trip) may lack it,
+    // and the badge below must simply not render rather than crash.
+    deadlineEnd?: string;
   };
 };
 
@@ -60,10 +64,23 @@ export default function Objective({ data }: ObjectiveProps) {
   const variant = getVariant(data?.isTask);
   const { backgroundColor, borderColor } = VARIANT_COLORS[variant];
 
+  // Deliberately minimal per plan: month-abbreviation + day only (no year, no
+  // time, no deadlineStart, no overdue color-coding, no tooltip). Uses an
+  // explicit "en-US" locale rather than the host default so the label is
+  // deterministic across machines/CI (a bare `toLocaleDateString()` would
+  // follow the runner's default locale and could format differently).
+  const deadlineLabel = data?.deadlineEnd
+    ? new Date(data.deadlineEnd).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      })
+    : null;
+
   return (
     <div
       data-variant={variant}
       style={{
+        position: "relative",
         width: 48,
         height: 48,
         borderRadius: "50%",
@@ -77,6 +94,33 @@ export default function Objective({ data }: ObjectiveProps) {
         position={Position.Bottom}
         isConnectable={isSaved}
       />
+      {/* Nested inside the circular div (not a sibling) so pre-existing tests
+          that grab container.firstElementChild for the circle's own inline
+          styles/attributes remain unaffected. Positioned absolutely just
+          below the circle (rather than inline text squeezed into the 48px
+          circle itself) so it stays legible at this node size. Styled inline
+          rather than via Objective.css, matching the rest of this component
+          (see VARIANT_COLORS comment above) — that stylesheet isn't imported
+          anywhere and jsdom doesn't apply real stylesheet rules under this
+          project's vitest config regardless. */}
+      {deadlineLabel && (
+        <div
+          style={{
+            position: "absolute",
+            top: "100%",
+            left: "50%",
+            transform: "translateX(-50%)",
+            marginTop: 2,
+            fontSize: 10,
+            lineHeight: 1,
+            whiteSpace: "nowrap",
+            color: "var(--node-deadline-text, currentColor)",
+            pointerEvents: "none",
+          }}
+        >
+          {deadlineLabel}
+        </div>
+      )}
     </div>
   );
 }

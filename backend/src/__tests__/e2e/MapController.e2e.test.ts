@@ -19,14 +19,27 @@ app.patch("/maps/:id", updateMap);
 // Mirrors the makeObjective helper in ObjectiveEdgeController.e2e.test.ts —
 // creates a real Objective row directly via Prisma (bypassing the
 // controller/service layer) so tests can set up graph fixtures without
-// depending on the ObjectiveController being correct.
+// depending on the ObjectiveController being correct. A valid deadline pair
+// is supplied even though these fixtures have nothing to do with the
+// deadline feature: deadlines are mandatory end-to-end now — both columns
+// are NOT NULL at the DB level — so a bare create with no deadline fields
+// would violate that constraint.
+const FIXTURE_DEADLINE_START = "2025-01-01T00:00:00.000Z";
+const FIXTURE_DEADLINE_END = "2025-12-31T00:00:00.000Z";
+
 async function makeObjective(
   mapId: number,
   description: string,
   isTask = false,
 ) {
   const objective = await prisma.objective.create({
-    data: { description, isTask, mapId },
+    data: {
+      description,
+      isTask,
+      mapId,
+      deadlineStart: new Date(FIXTURE_DEADLINE_START),
+      deadlineEnd: new Date(FIXTURE_DEADLINE_END),
+    },
   });
   return objective.id;
 }
@@ -270,6 +283,8 @@ describe("GET /maps/:id (end-to-end, real HTTP + real database)", () => {
         description: "Do {reps} reps",
         isTask: true,
         mapId,
+        deadlineStart: new Date(FIXTURE_DEADLINE_START),
+        deadlineEnd: new Date(FIXTURE_DEADLINE_END),
         counter: { create: { label: "reps", targetQuantity: null } },
       },
       include: { counter: true },

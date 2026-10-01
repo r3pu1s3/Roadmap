@@ -79,6 +79,39 @@ const mockedCreateObjectiveEdge = vi.mocked(createObjectiveEdge);
 const mockedDeleteObjectiveEdge = vi.mocked(deleteObjectiveEdge);
 const mockedGetMap = vi.mocked(getMap);
 
+// --- deadline fixtures/helpers ---
+// ObjectiveResponse (and the createObjective/updateObjective payload types)
+// now require deadlineStart/deadlineEnd on every objective. These two ISO
+// constants are reused wherever a fixture just needs "some valid deadline"
+// and the test doesn't care about the actual values — tests that DO care
+// (pre-fill / round-trip assertions) use distinct literals of their own.
+// Deliberately whole-minute/whole-second values so ISO -> datetime-local ->
+// ISO round-trips (as ObjectiveEditSidebar performs) reproduce exactly,
+// matching the convention already established in ObjectiveEditSidebar.test.tsx.
+const DEADLINE_START = "2026-08-21T14:00:00.000Z";
+const DEADLINE_END = "2026-08-21T15:00:00.000Z";
+
+// Raw <input type="datetime-local"> values the helpers below fill into the
+// create sidebar's deadline fields (a user-typed local-time string, distinct
+// from the already-ISO DEADLINE_START/END constants above, which stand in for
+// API *response* data). Tests that assert on the resulting createObjective/
+// updateObjective call convert these the same way the sidebars do
+// (`new Date(value).toISOString()`), so the assertion isn't tied to the host
+// machine's timezone.
+const DEADLINE_START_LOCAL = "2026-08-21T14:00";
+const DEADLINE_END_LOCAL = "2026-08-21T15:00";
+
+// Mirrors ObjectiveEditSidebar's own ISO -> `datetime-local` conversion
+// (local calendar/clock fields, minute precision) so pre-fill assertions
+// aren't tied to the host machine's timezone.
+function toDatetimeLocalValue(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
+    d.getHours(),
+  )}:${pad(d.getMinutes())}`;
+}
+
 // Clicking React Flow's pane/nodes triggers d3-zoom's mousedown handling,
 // which crashes in jsdom when driven by userEvent's full pointer-event
 // sequence (d3-drag's nodrag.js reads `event.view.document` off a null
@@ -176,6 +209,8 @@ async function createSavedNode(
     description: objective.description,
     isTask: false,
     counter: null,
+    deadlineStart: DEADLINE_START,
+    deadlineEnd: DEADLINE_END,
   });
   await createObjectiveViaUI(user, container, {
     type: "Objective",
@@ -201,6 +236,18 @@ async function createObjectiveViaUI(
     ),
     description,
   );
+  // Deadline fields now live on their own step, reached via "Next" once a
+  // description is entered — see ObjectiveSidebar's three-step flow
+  // (type -> description -> deadline).
+  await user.click(screen.getByText("Next"));
+  // Submit stays disabled until both deadline fields are filled (and
+  // start <= end) — see ObjectiveSidebar's deadlinesValid guard.
+  fireEvent.change(screen.getByLabelText(/deadline start/i), {
+    target: { value: DEADLINE_START_LOCAL },
+  });
+  fireEvent.change(screen.getByLabelText(/deadline end/i), {
+    target: { value: DEADLINE_END_LOCAL },
+  });
   await user.click(screen.getByText("Submit"));
 }
 
@@ -248,7 +295,15 @@ describe("Map", () => {
       expect(screen.getByText("Loading map…")).toBeInTheDocument();
     });
 
-    it("renders one canvas node per objective, with data reflecting id/description/isTask/counter", async () => {
+    it("renders one canvas node per objective, with data reflecting id/description/isTask/counter/deadlines", async () => {
+      // Deliberately distinct deadline pairs per objective (rather than the
+      // shared DEADLINE_START/END constants) so this test actually proves
+      // each node's data carries its OWN objective's deadlines, not just
+      // whatever fixture value happens to be hardcoded everywhere else.
+      const objective1DeadlineStart = "2026-08-21T14:00:00.000Z";
+      const objective1DeadlineEnd = "2026-08-21T15:00:00.000Z";
+      const objective2DeadlineStart = "2026-09-01T09:00:00.000Z";
+      const objective2DeadlineEnd = "2026-09-05T09:00:00.000Z";
       mockedGetMap.mockResolvedValueOnce({
         id: 5,
         name: "Test Map",
@@ -259,6 +314,8 @@ describe("Map", () => {
             description: "Get stronger",
             isTask: false,
             counter: null,
+            deadlineStart: objective1DeadlineStart,
+            deadlineEnd: objective1DeadlineEnd,
           },
           {
             id: 2,
@@ -266,6 +323,8 @@ describe("Map", () => {
             description: "Do {reps} pushups",
             isTask: true,
             counter: { id: 1, label: "reps", targetQuantity: 20 },
+            deadlineStart: objective2DeadlineStart,
+            deadlineEnd: objective2DeadlineEnd,
           },
         ],
         edges: [],
@@ -283,12 +342,16 @@ describe("Map", () => {
         description: "Get stronger",
         isTask: false,
         counter: null,
+        deadlineStart: objective1DeadlineStart,
+        deadlineEnd: objective1DeadlineEnd,
       });
       expect(nodeById(2)?.data).toMatchObject({
         id: 2,
         description: "Do {reps} pushups",
         isTask: true,
         counter: { id: 1, label: "reps", targetQuantity: 20 },
+        deadlineStart: objective2DeadlineStart,
+        deadlineEnd: objective2DeadlineEnd,
       });
     });
 
@@ -297,8 +360,24 @@ describe("Map", () => {
         id: 5,
         name: "Test Map",
         objectives: [
-          { id: 1, mapId: 5, description: "A", isTask: false, counter: null },
-          { id: 2, mapId: 5, description: "B", isTask: false, counter: null },
+          {
+            id: 1,
+            mapId: 5,
+            description: "A",
+            isTask: false,
+            counter: null,
+            deadlineStart: DEADLINE_START,
+            deadlineEnd: DEADLINE_END,
+          },
+          {
+            id: 2,
+            mapId: 5,
+            description: "B",
+            isTask: false,
+            counter: null,
+            deadlineStart: DEADLINE_START,
+            deadlineEnd: DEADLINE_END,
+          },
         ],
         edges: [{ id: 500, parentId: 1, childId: 2 }],
       });
@@ -321,9 +400,33 @@ describe("Map", () => {
         id: 5,
         name: "Test Map",
         objectives: [
-          { id: 1, mapId: 5, description: "A", isTask: false, counter: null },
-          { id: 2, mapId: 5, description: "B", isTask: false, counter: null },
-          { id: 3, mapId: 5, description: "C", isTask: false, counter: null },
+          {
+            id: 1,
+            mapId: 5,
+            description: "A",
+            isTask: false,
+            counter: null,
+            deadlineStart: DEADLINE_START,
+            deadlineEnd: DEADLINE_END,
+          },
+          {
+            id: 2,
+            mapId: 5,
+            description: "B",
+            isTask: false,
+            counter: null,
+            deadlineStart: DEADLINE_START,
+            deadlineEnd: DEADLINE_END,
+          },
+          {
+            id: 3,
+            mapId: 5,
+            description: "C",
+            isTask: false,
+            counter: null,
+            deadlineStart: DEADLINE_START,
+            deadlineEnd: DEADLINE_END,
+          },
         ],
         // Child is upstream/first, parent is downstream/later: A leads to
         // B leads to C, i.e. A -> B -> C.
@@ -489,7 +592,7 @@ describe("Map", () => {
 
   // --- create: happy path ---
 
-  it("calls createObjective with description, isTask, and mapId parsed from the route", async () => {
+  it("calls createObjective with description, isTask, mapId, and ISO deadlines sourced from the sidebar's form data", async () => {
     const user = userEvent.setup();
     mockedCreateObjective.mockResolvedValue({
       id: 42,
@@ -497,6 +600,8 @@ describe("Map", () => {
       description: "Get stronger",
       isTask: false,
       counter: null,
+      deadlineStart: DEADLINE_START,
+      deadlineEnd: DEADLINE_END,
     });
     const { container } = render(<Map />);
 
@@ -505,10 +610,17 @@ describe("Map", () => {
       description: "Get stronger",
     });
 
+    // createObjectiveViaUI fills the sidebar's deadline inputs with
+    // DEADLINE_START_LOCAL/END_LOCAL; the raw local-time strings must be
+    // converted to full ISO 8601 (e.g. via `new Date(value).toISOString()`)
+    // before hitting the API, mirroring ObjectiveSidebar's own conversion —
+    // computed the same way here so this isn't tied to the host timezone.
     expect(mockedCreateObjective).toHaveBeenCalledWith({
       description: "Get stronger",
       isTask: false,
       mapId: 5,
+      deadlineStart: new Date(DEADLINE_START_LOCAL).toISOString(),
+      deadlineEnd: new Date(DEADLINE_END_LOCAL).toISOString(),
     });
   });
 
@@ -520,6 +632,8 @@ describe("Map", () => {
       description: "Get stronger",
       isTask: false,
       counter: null,
+      deadlineStart: DEADLINE_START,
+      deadlineEnd: DEADLINE_END,
     });
     const { container } = render(<Map />);
 
@@ -546,6 +660,16 @@ describe("Map", () => {
       screen.getByPlaceholderText(/get stronger this year/i),
       "Get stronger",
     );
+    await user.click(screen.getByText("Next"));
+    // Submit stays disabled without both deadline fields filled — this test
+    // drives the sidebar manually (not via createObjectiveViaUI) since it
+    // needs to assert mid-flight state before the pending promise resolves.
+    fireEvent.change(screen.getByLabelText(/deadline start/i), {
+      target: { value: DEADLINE_START_LOCAL },
+    });
+    fireEvent.change(screen.getByLabelText(/deadline end/i), {
+      target: { value: DEADLINE_END_LOCAL },
+    });
     await user.click(screen.getByText("Submit"));
 
     expect(await screen.findByText("Saving…")).toBeInTheDocument();
@@ -619,6 +743,8 @@ describe("Map", () => {
       description: "Get stronger",
       isTask: false,
       counter: null,
+      deadlineStart: DEADLINE_START,
+      deadlineEnd: DEADLINE_END,
     });
     const { container } = render(<Map />);
 
@@ -634,9 +760,48 @@ describe("Map", () => {
     expect(screen.getByDisplayValue("Get stronger")).toBeInTheDocument();
   });
 
+  it("opens the edit sidebar for an already-saved (hydrated) node pre-filled with its stored deadline values", async () => {
+    // Distinct from DEADLINE_START/END on purpose — this pre-fill assertion
+    // cares about the actual round-tripped values, not just "some valid
+    // deadline", per this file's convention for such cases.
+    const isoStart = "2026-08-21T14:00:00.000Z";
+    const isoEnd = "2026-08-22T09:30:00.000Z";
+    mockedGetMap.mockResolvedValueOnce({
+      id: 5,
+      name: "Test Map",
+      objectives: [
+        {
+          id: 1,
+          mapId: 5,
+          description: "Get stronger",
+          isTask: false,
+          counter: null,
+          deadlineStart: isoStart,
+          deadlineEnd: isoEnd,
+        },
+      ],
+      edges: [],
+    });
+    const { container } = render(<Map />);
+    await waitForHydrated();
+
+    fireEvent.click(getNodeElements(container)[0]);
+
+    // Values are converted ISO -> datetime-local the same way
+    // ObjectiveEditSidebar does on mount (local calendar/clock fields,
+    // minute precision), so this holds regardless of the host machine's
+    // timezone.
+    expect(screen.getByLabelText(/deadline start/i)).toHaveValue(
+      toDatetimeLocalValue(isoStart),
+    );
+    expect(screen.getByLabelText(/deadline end/i)).toHaveValue(
+      toDatetimeLocalValue(isoEnd),
+    );
+  });
+
   // --- edit: happy path ---
 
-  it("calls updateObjective with the objective's id and the edited description/isTask only", async () => {
+  it("calls updateObjective with the objective's id, the edited description/isTask, and its untouched deadlines round-tripped to ISO", async () => {
     const user = userEvent.setup();
     mockedCreateObjective.mockResolvedValue({
       id: 42,
@@ -644,6 +809,8 @@ describe("Map", () => {
       description: "Get stronger",
       isTask: false,
       counter: null,
+      deadlineStart: DEADLINE_START,
+      deadlineEnd: DEADLINE_END,
     });
     mockedUpdateObjective.mockResolvedValue({
       id: 42,
@@ -651,6 +818,8 @@ describe("Map", () => {
       description: "Get even stronger",
       isTask: false,
       counter: null,
+      deadlineStart: DEADLINE_START,
+      deadlineEnd: DEADLINE_END,
     });
     const { container } = render(<Map />);
 
@@ -665,9 +834,63 @@ describe("Map", () => {
     await user.type(textarea, "Get even stronger");
     await user.click(screen.getByText("Save"));
 
+    // The edit sidebar pre-fills its deadline inputs from the created
+    // objective's DEADLINE_START/END (untouched here), so the round-trip
+    // (ISO -> datetime-local on mount -> ISO on submit) must reproduce them
+    // exactly, since both are whole-minute values.
     expect(mockedUpdateObjective).toHaveBeenCalledWith(42, {
       description: "Get even stronger",
       isTask: false,
+      deadlineStart: DEADLINE_START,
+      deadlineEnd: DEADLINE_END,
+    });
+  });
+
+  it("calls updateObjective with newly-edited deadlineStart/deadlineEnd converted to ISO when the user changes them in the edit sidebar", async () => {
+    const user = userEvent.setup();
+    mockedCreateObjective.mockResolvedValue({
+      id: 42,
+      mapId: 5,
+      description: "Get stronger",
+      isTask: false,
+      counter: null,
+      deadlineStart: DEADLINE_START,
+      deadlineEnd: DEADLINE_END,
+    });
+    mockedUpdateObjective.mockResolvedValue({
+      id: 42,
+      mapId: 5,
+      description: "Get stronger",
+      isTask: false,
+      counter: null,
+      deadlineStart: DEADLINE_START,
+      deadlineEnd: DEADLINE_END,
+    });
+    const { container } = render(<Map />);
+
+    await createObjectiveViaUI(user, container, {
+      type: "Objective",
+      description: "Get stronger",
+    });
+    fireEvent.click(getNodeElements(container)[0]);
+
+    // Deliberately distinct from DEADLINE_START/END so this assertion can't
+    // pass by accident from a stale/round-tripped value.
+    const newStartLocal = "2026-09-01T09:00";
+    const newEndLocal = "2026-09-02T10:30";
+    fireEvent.change(screen.getByLabelText(/deadline start/i), {
+      target: { value: newStartLocal },
+    });
+    fireEvent.change(screen.getByLabelText(/deadline end/i), {
+      target: { value: newEndLocal },
+    });
+    await user.click(screen.getByText("Save"));
+
+    expect(mockedUpdateObjective).toHaveBeenCalledWith(42, {
+      description: "Get stronger",
+      isTask: false,
+      deadlineStart: new Date(newStartLocal).toISOString(),
+      deadlineEnd: new Date(newEndLocal).toISOString(),
     });
   });
 
@@ -679,6 +902,8 @@ describe("Map", () => {
       description: "Get stronger",
       isTask: false,
       counter: null,
+      deadlineStart: DEADLINE_START,
+      deadlineEnd: DEADLINE_END,
     });
     mockedUpdateObjective.mockResolvedValue({
       id: 42,
@@ -686,6 +911,8 @@ describe("Map", () => {
       description: "Get even stronger",
       isTask: false,
       counter: null,
+      deadlineStart: DEADLINE_START,
+      deadlineEnd: DEADLINE_END,
     });
     const { container } = render(<Map />);
 
@@ -716,6 +943,8 @@ describe("Map", () => {
       description: "Get stronger",
       isTask: false,
       counter: null,
+      deadlineStart: DEADLINE_START,
+      deadlineEnd: DEADLINE_END,
     });
     mockedUpdateObjective.mockReturnValue(new Promise(() => {}));
     const { container } = render(<Map />);
@@ -741,6 +970,8 @@ describe("Map", () => {
       description: "Get stronger",
       isTask: false,
       counter: null,
+      deadlineStart: DEADLINE_START,
+      deadlineEnd: DEADLINE_END,
     });
     mockedUpdateObjective.mockRejectedValue(
       new Error("description is required"),
@@ -768,6 +999,8 @@ describe("Map", () => {
       description: "Get stronger",
       isTask: false,
       counter: null,
+      deadlineStart: DEADLINE_START,
+      deadlineEnd: DEADLINE_END,
     });
     mockedUpdateObjective.mockRejectedValue("boom");
     const { container } = render(<Map />);
@@ -845,6 +1078,8 @@ describe("Map", () => {
       description: "Get stronger",
       isTask: true,
       counter: null,
+      deadlineStart: DEADLINE_START,
+      deadlineEnd: DEADLINE_END,
     });
 
     // Live-preview a type change first, then save — the final node data

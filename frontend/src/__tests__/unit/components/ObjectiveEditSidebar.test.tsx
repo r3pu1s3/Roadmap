@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import ObjectiveEditSidebar, {
   type ObjectiveData,
@@ -10,6 +10,8 @@ const plainObjective: ObjectiveData = {
   description: "Get stronger this year",
   isTask: false,
   counter: null,
+  deadlineStart: "2026-08-20T10:00:00.000Z",
+  deadlineEnd: "2026-08-21T10:00:00.000Z",
 };
 
 const taskObjective: ObjectiveData = {
@@ -17,7 +19,21 @@ const taskObjective: ObjectiveData = {
   description: "Do {pushups} pushups",
   isTask: true,
   counter: { label: "pushups", targetQuantity: null },
+  deadlineStart: "2026-09-01T08:00:00.000Z",
+  deadlineEnd: "2026-09-02T08:00:00.000Z",
 };
+
+// Mirrors the ISO -> `datetime-local` input-value conversion the component is
+// expected to perform on mount (local calendar/clock fields, minute
+// precision, no seconds/timezone suffix). Computed from `Date` rather than
+// hardcoded so these tests aren't tied to the host machine's timezone.
+function toDatetimeLocalValue(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
+    d.getHours(),
+  )}:${pad(d.getMinutes())}`;
+}
 
 describe("ObjectiveEditSidebar", () => {
   afterEach(() => {
@@ -86,6 +102,47 @@ describe("ObjectiveEditSidebar", () => {
     ).toBeInTheDocument();
   });
 
+  // --- deadline pre-fill from the objective prop ---
+
+  it("pre-fills the deadline start and end inputs from the objective's ISO deadline fields", () => {
+    render(
+      <ObjectiveEditSidebar
+        isOpen={true}
+        objective={plainObjective}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    // Pre-filled values are derived from the fixture's ISO strings via the
+    // ISO -> datetime-local conversion the component is expected to perform
+    // on mount, not typed in by the fixtures themselves.
+    expect(screen.getByLabelText(/deadline start/i)).toHaveValue(
+      toDatetimeLocalValue(plainObjective.deadlineStart),
+    );
+    expect(screen.getByLabelText(/deadline end/i)).toHaveValue(
+      toDatetimeLocalValue(plainObjective.deadlineEnd),
+    );
+  });
+
+  it("pre-fills the deadline inputs for a task objective with a different deadline range", () => {
+    render(
+      <ObjectiveEditSidebar
+        isOpen={true}
+        objective={taskObjective}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByLabelText(/deadline start/i)).toHaveValue(
+      toDatetimeLocalValue(taskObjective.deadlineStart),
+    );
+    expect(screen.getByLabelText(/deadline end/i)).toHaveValue(
+      toDatetimeLocalValue(taskObjective.deadlineEnd),
+    );
+  });
+
   // --- editing the description ---
 
   it("lets the user change the description", async () => {
@@ -121,6 +178,84 @@ describe("ObjectiveEditSidebar", () => {
     await user.clear(textarea);
 
     expect(screen.getByText("Save")).toBeDisabled();
+  });
+
+  // --- deadline validation gating Save ---
+
+  it("keeps Save disabled if the user clears the deadline start input after it was pre-filled", () => {
+    render(
+      <ObjectiveEditSidebar
+        isOpen={true}
+        objective={plainObjective}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    // Both deadlines and the description are valid on mount (Save should be
+    // enabled); clearing just the start field must re-disable it.
+    fireEvent.change(screen.getByLabelText(/deadline start/i), {
+      target: { value: "" },
+    });
+
+    expect(screen.getByText("Save")).toBeDisabled();
+  });
+
+  it("keeps Save disabled if the user clears the deadline end input after it was pre-filled", () => {
+    render(
+      <ObjectiveEditSidebar
+        isOpen={true}
+        objective={plainObjective}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/deadline end/i), {
+      target: { value: "" },
+    });
+
+    expect(screen.getByText("Save")).toBeDisabled();
+  });
+
+  it("keeps Save disabled when deadline start is edited to be after deadline end", () => {
+    render(
+      <ObjectiveEditSidebar
+        isOpen={true}
+        objective={plainObjective}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    // plainObjective's end is 2026-08-21T10:00; push start a day past it.
+    fireEvent.change(screen.getByLabelText(/deadline start/i), {
+      target: { value: "2026-08-22T10:00" },
+    });
+
+    expect(screen.getByText("Save")).toBeDisabled();
+  });
+
+  it("enables Save when deadline start and end are set to the exact same value (equal bounds allowed client-side)", () => {
+    render(
+      <ObjectiveEditSidebar
+        isOpen={true}
+        objective={plainObjective}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    // The server enforces a minimum 60s gap; the sidebar only guards
+    // start <= end, so an exactly-equal pair must NOT disable Save.
+    fireEvent.change(screen.getByLabelText(/deadline start/i), {
+      target: { value: "2026-08-20T10:00" },
+    });
+    fireEvent.change(screen.getByLabelText(/deadline end/i), {
+      target: { value: "2026-08-20T10:00" },
+    });
+
+    expect(screen.getByText("Save")).not.toBeDisabled();
   });
 
   // --- switching type via the Objective/Task buttons ---
@@ -254,7 +389,7 @@ describe("ObjectiveEditSidebar", () => {
 
   // --- submit ---
 
-  it("calls onSubmit with the current description and isTask", async () => {
+  it("calls onSubmit with the current description, isTask, and the untouched deadlines converted back to ISO", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
     render(
@@ -272,10 +407,44 @@ describe("ObjectiveEditSidebar", () => {
     await user.click(screen.getByText("Task"));
     await user.click(screen.getByText("Save"));
 
+    // Deadlines were never touched, so the round-trip (ISO -> datetime-local
+    // on mount -> ISO on submit) must reproduce the original fixture values
+    // exactly, since both fixtures already sit on whole minutes.
     expect(onSubmit).toHaveBeenCalledWith({
       description: "Updated description",
       isTask: true,
+      deadlineStart: plainObjective.deadlineStart,
+      deadlineEnd: plainObjective.deadlineEnd,
     });
+  });
+
+  it("calls onSubmit with a recomputed ISO deadlineStart when the user edits the deadline start input", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(
+      <ObjectiveEditSidebar
+        isOpen={true}
+        objective={plainObjective}
+        onClose={vi.fn()}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    const newStartValue = "2026-08-20T09:30";
+    fireEvent.change(screen.getByLabelText(/deadline start/i), {
+      target: { value: newStartValue },
+    });
+    await user.click(screen.getByText("Save"));
+
+    // Expected ISO is computed the same way the component is expected to
+    // convert it (`new Date(value).toISOString()`), so the assertion holds
+    // regardless of the host machine's timezone.
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deadlineStart: new Date(newStartValue).toISOString(),
+        deadlineEnd: plainObjective.deadlineEnd,
+      }),
+    );
   });
 
   // --- close ---

@@ -1,4 +1,5 @@
 import prisma from "../lib/prisma";
+import { validateEdgeDeadlines } from "./ObjectiveDeadlineService";
 
 export interface CreateObjectiveEdgeInput {
   parentId: number;
@@ -96,6 +97,19 @@ export async function createObjectiveEdge(data: CreateObjectiveEdgeInput) {
 
     frontier = nextFrontier;
   }
+
+  // --- Deadline propagation validation ---
+  // A proposed edge (childId upstream, parentId downstream) must not make an
+  // impossible promise across the deadline graph -- e.g. linking a task to
+  // upstream work that hasn't finished by the time the task starts, or
+  // wrapping a goal's "umbrella" around upstream work it doesn't actually
+  // contain. This only needs to check the affected subgraph (the child's
+  // existing ancestors and the parent's existing descendants), not the
+  // whole map, since nothing else could be impacted by this one new edge.
+  // Deliberately run AFTER cycle-detection: a cyclic edge is rejected
+  // outright regardless of deadlines, so there's no reason to pay for this
+  // extra graph walk in that case.
+  await validateEdgeDeadlines(parentObjective, childObjective);
 
   // --- Create ---
   return prisma.objectiveEdge.create({

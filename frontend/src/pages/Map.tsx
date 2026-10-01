@@ -358,6 +358,10 @@ function MapInner() {
           description: formData.description,
           isTask: formData.isTask,
           mapId: Number(mapId),
+          // Already converted to full ISO strings by ObjectiveSidebar itself
+          // (from its datetime-local inputs) — no conversion needed here.
+          deadlineStart: formData.deadlineStart,
+          deadlineEnd: formData.deadlineEnd,
         });
 
         // Swap the local placeholder node's data for the real, saved
@@ -463,6 +467,11 @@ function MapInner() {
         const updated = await updateObjective(editingNode.data.id as number, {
           description: formData.description,
           isTask: formData.isTask,
+          // Already converted to full ISO strings by ObjectiveEditSidebar
+          // itself (from its datetime-local inputs) — no conversion needed
+          // here.
+          deadlineStart: formData.deadlineStart,
+          deadlineEnd: formData.deadlineEnd,
         });
 
         setNodes((prev) =>
@@ -493,6 +502,13 @@ function MapInner() {
         description: editingNode.data.description as string,
         isTask: editingNode.data.isTask as boolean,
         counter: (editingNode.data.counter as ObjectiveData["counter"]) ?? null,
+        // editingNode.data is always either the hydrated ObjectiveResponse
+        // spread (on load) or the { ...created/updated, dbId } spread (after
+        // a create/edit save), both of which carry these now-required
+        // fields as full ISO strings — ObjectiveEditSidebar converts them to
+        // datetime-local for display itself.
+        deadlineStart: editingNode.data.deadlineStart as string,
+        deadlineEnd: editingNode.data.deadlineEnd as string,
       }
     : null;
 

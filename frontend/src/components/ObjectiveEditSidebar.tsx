@@ -11,11 +11,31 @@ export interface ObjectiveData {
   description: string;
   isTask: boolean;
   counter: ObjectiveCounterData | null;
+  // ISO 8601 strings. Mandatory: every objective always has a deadline
+  // range once it exists server-side (see ObjectiveDeadlineService).
+  deadlineStart: string;
+  deadlineEnd: string;
 }
 
 export interface UpdateObjectiveFormData {
   description: string;
   isTask: boolean;
+  // ISO 8601 strings, always sent in full on submit (no partial update
+  // semantics for deadlines).
+  deadlineStart: string;
+  deadlineEnd: string;
+}
+
+// Converts an ISO 8601 string into the value format the native
+// `<input type="datetime-local">` expects, using the browser's LOCAL
+// date/time components (not UTC) so the field reflects what the user
+// would expect to see in their own timezone.
+function toDatetimeLocalValue(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
+    d.getHours(),
+  )}:${pad(d.getMinutes())}`;
 }
 
 interface ObjectiveEditSidebarProps {
@@ -46,11 +66,31 @@ export default function ObjectiveEditSidebar({
   // whichever objective is currently being edited.
   const [description, setDescription] = useState(objective?.description ?? "");
   const [isTask, setIsTask] = useState(objective?.isTask ?? false);
+  const [deadlineStart, setDeadlineStart] = useState(
+    objective ? toDatetimeLocalValue(objective.deadlineStart) : "",
+  );
+  const [deadlineEnd, setDeadlineEnd] = useState(
+    objective ? toDatetimeLocalValue(objective.deadlineEnd) : "",
+  );
 
   if (!objective) return null;
 
+  // Save is blocked if the description is empty, either deadline field is
+  // empty (e.g. the user cleared it), or start is strictly after end. Equal
+  // start/end is allowed client-side — the server enforces the real minimum
+  // gap (see ObjectiveDeadlineService), so this is just a cheap sanity guard.
+  const deadlinesInvalid =
+    deadlineStart.trim().length === 0 ||
+    deadlineEnd.trim().length === 0 ||
+    new Date(deadlineStart) > new Date(deadlineEnd);
+
   function handleSubmit() {
-    onSubmit({ description, isTask });
+    onSubmit({
+      description,
+      isTask,
+      deadlineStart: new Date(deadlineStart).toISOString(),
+      deadlineEnd: new Date(deadlineEnd).toISOString(),
+    });
   }
 
   const title = `Edit ${isTask ? "task" : "objective"}`;
@@ -64,7 +104,7 @@ export default function ObjectiveEditSidebar({
       errorMessage={errorMessage}
       secondaryLabel="Cancel"
       primaryLabel="Save"
-      primaryDisabled={description.trim().length === 0}
+      primaryDisabled={description.trim().length === 0 || deadlinesInvalid}
       onPrimaryClick={handleSubmit}
     >
       <label className="obj-form-label">Description</label>
@@ -101,6 +141,38 @@ export default function ObjectiveEditSidebar({
           <span className="obj-form-type-btn-title">Task</span>
         </button>
       </div>
+
+      <label
+        className="obj-form-label"
+        htmlFor="obj-edit-deadline-start"
+        style={{ marginTop: 16 }}
+      >
+        Deadline start
+      </label>
+      <input
+        id="obj-edit-deadline-start"
+        className="obj-form-input"
+        type="datetime-local"
+        required
+        value={deadlineStart}
+        onChange={(e) => setDeadlineStart(e.target.value)}
+      />
+
+      <label
+        className="obj-form-label"
+        htmlFor="obj-edit-deadline-end"
+        style={{ marginTop: 16 }}
+      >
+        Deadline end
+      </label>
+      <input
+        id="obj-edit-deadline-end"
+        className="obj-form-input"
+        type="datetime-local"
+        required
+        value={deadlineEnd}
+        onChange={(e) => setDeadlineEnd(e.target.value)}
+      />
     </ObjectiveSidebarShell>
   );
 }

@@ -22,13 +22,18 @@ export async function updateObjective(req: Request, res: Response) {
       return res.status(400).json({ error: "id must be a valid integer" });
     }
 
-    // Only description/isTask are forwarded — even if the client sends an
-    // "id" in the body, it's silently ignored rather than overriding the
-    // id parsed and validated from the URL param above.
+    // Only description/isTask/deadlineStart/deadlineEnd are forwarded — even
+    // if the client sends an "id" in the body, it's silently ignored rather
+    // than overriding the id parsed and validated from the URL param above.
+    // deadlineStart/deadlineEnd are now mandatory on every Objective, so
+    // they're whitelisted through here just like description/isTask; the
+    // service is responsible for rejecting missing/invalid values.
     const objective = await objectiveService.updateObjective({
       id,
       description: req.body.description,
       isTask: req.body.isTask,
+      deadlineStart: req.body.deadlineStart,
+      deadlineEnd: req.body.deadlineEnd,
     });
     res.status(200).json(objective);
   } catch (err) {

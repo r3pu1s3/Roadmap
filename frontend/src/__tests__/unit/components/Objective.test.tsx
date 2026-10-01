@@ -1,7 +1,13 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { render, cleanup } from "@testing-library/react";
+import { render, cleanup, screen } from "@testing-library/react";
 import { ReactFlowProvider } from "@xyflow/react";
 import Objective from "../../../components/Objective";
+
+// Matches a short "Mon D" / "Mon DD" date label (e.g. "Aug 21") without
+// pinning down exactly which formatting call (toLocaleDateString, a manual
+// Intl.DateTimeFormat, etc.) the builder chooses to produce it.
+const SHORT_DATE_LABEL =
+  /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}$/;
 
 // Objective is a React Flow custom node component. Handle (from @xyflow/react)
 // reads from React Flow's internal store via context, so it throws
@@ -159,5 +165,45 @@ describe("Objective", () => {
       emptyNode.style.border,
     ];
     expect(new Set(borders).size).toBe(3);
+  });
+
+  // --- deadline badge (data.deadlineEnd) ---
+  //
+  // Fixture: "2026-08-21T12:00:00.000Z" — noon UTC, not midnight. Formatting
+  // a date at local-midnight can roll to the previous/next calendar day
+  // depending on the runner's timezone offset; noon UTC leaves a wide margin
+  // (roughly UTC-11 through UTC+13) where the formatted local calendar day
+  // still reads "Aug 21" regardless of the CI machine's timezone. Only the
+  // month + day are asserted, per the plan (no year, no time, no
+  // deadlineStart, no tooltip, no overdue color-coding).
+
+  it("renders a badge with the formatted deadlineEnd date when present", () => {
+    renderObjective({ deadlineEnd: "2026-08-21T12:00:00.000Z" });
+
+    // Structure-agnostic: this queries by visible text rather than assuming
+    // the badge is nested inside or a sibling of the circular node div, since
+    // that DOM placement is left to the builder (see report re: coordination
+    // with container.firstElementChild in the pre-existing tests above).
+    const badge = screen.getByText("Aug 21");
+    expect(badge).toBeInTheDocument();
+  });
+
+  it("renders no badge when data.deadlineEnd is absent", () => {
+    renderObjective({ isTask: true });
+
+    expect(screen.queryByText(SHORT_DATE_LABEL)).not.toBeInTheDocument();
+  });
+
+  it("renders no badge when data itself is undefined (defensive, e.g. stale in-memory node data)", () => {
+    // Bypasses the renderObjective helper (which defaults data to `{}`) to
+    // exercise the `data` prop being entirely omitted, mirroring the
+    // component's existing `data?.id` / `data?.isTask` optional-chaining.
+    render(
+      <ReactFlowProvider>
+        <Objective />
+      </ReactFlowProvider>,
+    );
+
+    expect(screen.queryByText(SHORT_DATE_LABEL)).not.toBeInTheDocument();
   });
 });

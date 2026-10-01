@@ -170,3 +170,41 @@
 .obj-form-btn-primary:hover {
   background: #4f46e5;
 }
+
+.obj-form-deadline-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.obj-form-deadline-field {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.obj-form-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: #0f0f0f;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: #f5f5f5;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+}
+
+.obj-form-input:focus {
+  border-color: #6366f1;
+}
+
+/* Safari/WebKit renders the datetime-local calendar/clock picker icon dark
+   by default, which is invisible against this dark theme — invert it so it
+   stays visible without needing a custom icon. */
+.obj-form-input::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+}
