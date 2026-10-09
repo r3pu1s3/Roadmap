@@ -194,6 +194,15 @@ describe("Objective", () => {
     expect(screen.queryByText(SHORT_DATE_LABEL)).not.toBeInTheDocument();
   });
 
+  it("renders no badge when data.deadlineEnd is null", () => {
+    // Distinct from the absent/undefined case above: the API now returns
+    // `deadlineEnd: null` for objectives with no deadline, so an explicit null
+    // must also render no badge (and must not become "Jan 1" via new Date(null)).
+    renderObjective({ deadlineEnd: null });
+
+    expect(screen.queryByText(SHORT_DATE_LABEL)).not.toBeInTheDocument();
+  });
+
   it("renders no badge when data itself is undefined (defensive, e.g. stale in-memory node data)", () => {
     // Bypasses the renderObjective helper (which defaults data to `{}`) to
     // exercise the `data` prop being entirely omitted, mirroring the

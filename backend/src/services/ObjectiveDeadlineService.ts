@@ -6,18 +6,31 @@ import prisma from "../lib/prisma";
 // needed to enforce them against a node's *existing* neighbours whenever a
 // deadline, isTask flag, or edge changes.
 //
-// Deadlines are mandatory everywhere in this feature (the schema's
-// `deadlineStart`/`deadlineEnd` columns are NOT NULL, and ObjectiveService
-// requires both fields on every create/update), so there is intentionally no
-// null-handling anywhere below -- that branch would be dead code given the
-// schema guarantee.
+// Deadlines are nullable (the schema's `deadlineStart`/`deadlineEnd` columns
+// are nullable). A node either has a real deadline (both fields set) or no
+// deadline at all (both fields null) -- this both-or-neither invariant is
+// enforced by ObjectiveService's create/update logic before anything is
+// persisted, so this module never sees a "lopsided" node (exactly one field
+// null). `checkDeadlinePair` treats "no deadline" on either side of a pair as
+// vacuously satisfying the check -- see its guard below.
 
 export interface DeadlineNode {
   id: number;
   description: string;
   isTask: boolean;
-  deadlineStart: Date;
-  deadlineEnd: Date;
+  deadlineStart: Date | null;
+  deadlineEnd: Date | null;
+}
+
+/**
+ * Returns true when `node` has no deadline at all. `deadlineStart === null`
+ * is used as the sole proxy for this, since the both-or-neither invariant
+ * guarantees `deadlineEnd` is null too whenever `deadlineStart` is null.
+ */
+function hasNoDeadline(
+  node: DeadlineNode,
+): node is DeadlineNode & { deadlineStart: null; deadlineEnd: null } {
+  return node.deadlineStart === null;
 }
 
 /**
@@ -38,32 +51,47 @@ export interface DeadlineNode {
  * single node's own interval in ObjectiveService, which is a different
  * concern (a node can't be an instant; two *different* nodes' edges may
  * touch exactly).
+ *
+ * If either `ancestor` or `downstream` has no deadline at all, the pair is
+ * vacuously satisfied -- there is nothing to conflict with -- and this
+ * returns immediately without checking either rule.
  */
 export function checkDeadlinePair(
   ancestor: DeadlineNode,
   downstream: DeadlineNode,
 ): void {
+  if (hasNoDeadline(ancestor) || hasNoDeadline(downstream)) {
+    return;
+  }
+
+  // TS can't narrow both `ancestor` and `downstream` to non-null from the
+  // two independent `hasNoDeadline` checks above (each is a type predicate
+  // over a different variable, combined with `||`), even though the early
+  // return above guarantees neither has a null deadline here -- so we
+  // re-bind to locals whose type reflects that guarantee.
+  const ancestorStart = ancestor.deadlineStart as Date;
+  const ancestorEnd = ancestor.deadlineEnd as Date;
+  const downstreamStart = downstream.deadlineStart as Date;
+  const downstreamEnd = downstream.deadlineEnd as Date;
+
   if (downstream.isTask) {
-    if (ancestor.deadlineEnd > downstream.deadlineStart) {
+    if (ancestorEnd > downstreamStart) {
       throw new Error(
         `Deadline conflict: objective ${ancestor.id} ("${ancestor.description}") ends at ` +
-          `${ancestor.deadlineEnd.toISOString()}, which is after downstream task objective ` +
+          `${ancestorEnd.toISOString()}, which is after downstream task objective ` +
           `${downstream.id} ("${downstream.description}") starts at ` +
-          `${downstream.deadlineStart.toISOString()}. All upstream work must finish before a ` +
+          `${downstreamStart.toISOString()}. All upstream work must finish before a ` +
           `task can begin.`,
       );
     }
   } else {
-    if (
-      downstream.deadlineStart > ancestor.deadlineStart ||
-      ancestor.deadlineEnd > downstream.deadlineEnd
-    ) {
+    if (downstreamStart > ancestorStart || ancestorEnd > downstreamEnd) {
       throw new Error(
         `Deadline conflict: objective ${ancestor.id} ("${ancestor.description}")'s interval ` +
-          `[${ancestor.deadlineStart.toISOString()}, ${ancestor.deadlineEnd.toISOString()}] is not ` +
+          `[${ancestorStart.toISOString()}, ${ancestorEnd.toISOString()}] is not ` +
           `fully contained within downstream goal objective ${downstream.id} ` +
-          `("${downstream.description}")'s interval [${downstream.deadlineStart.toISOString()}, ` +
-          `${downstream.deadlineEnd.toISOString()}].`,
+          `("${downstream.description}")'s interval [${downstreamStart.toISOString()}, ` +
+          `${downstreamEnd.toISOString()}].`,
       );
     }
   }

@@ -1094,6 +1094,107 @@ describe("Map", () => {
     });
   });
 
+  // --- nullable deadlines ---
+  // Deadlines are optional (all-or-nothing): ObjectiveResponse's
+  // deadlineStart/deadlineEnd are `string | null`, and the sidebars send an
+  // explicit null (never undefined, never "") when the fields are left empty.
+
+  describe("nullable deadlines", () => {
+    it("calls createObjective with deadlineStart and deadlineEnd both exactly null when no deadline fields are filled", async () => {
+      const user = userEvent.setup();
+      mockedCreateObjective.mockResolvedValue({
+        id: 42,
+        mapId: 5,
+        description: "Get stronger",
+        isTask: false,
+        counter: null,
+        deadlineStart: null,
+        deadlineEnd: null,
+      });
+      const { container } = render(<Map />);
+      await waitForHydrated();
+
+      // Driven manually (not via createObjectiveViaUI, which always fills
+      // the deadline inputs): reach the deadline step but leave both empty.
+      clickPane(container);
+      await user.click(screen.getByText("Objective"));
+      await user.type(
+        screen.getByPlaceholderText(/get stronger this year/i),
+        "Get stronger",
+      );
+      await user.click(screen.getByText("Next"));
+      await user.click(screen.getByText("Submit"));
+
+      await waitFor(() =>
+        expect(mockedCreateObjective).toHaveBeenCalledTimes(1),
+      );
+      const payload = mockedCreateObjective.mock.calls[0][0];
+      // Strict null: not undefined, not "", not another falsy value.
+      expect(payload.deadlineStart).toBeNull();
+      expect(payload.deadlineEnd).toBeNull();
+      expect(payload).toEqual({
+        description: "Get stronger",
+        isTask: false,
+        mapId: 5,
+        deadlineStart: null,
+        deadlineEnd: null,
+      });
+    });
+
+    it("renders a hydrated node whose deadlines are null without crashing, keeping the nulls in its data", async () => {
+      mockedGetMap.mockResolvedValueOnce({
+        id: 5,
+        name: "Test Map",
+        objectives: [
+          {
+            id: 1,
+            mapId: 5,
+            description: "No deadline here",
+            isTask: false,
+            counter: null,
+            deadlineStart: null,
+            deadlineEnd: null,
+          },
+        ],
+        edges: [],
+      });
+      const { container } = render(<Map />);
+      await waitForHydrated();
+
+      expect(getNodeElements(container)).toHaveLength(1);
+      const node = getRfProps().nodes.find((n) => n.id === "1");
+      expect(node?.data?.deadlineStart).toBeNull();
+      expect(node?.data?.deadlineEnd).toBeNull();
+    });
+
+    it("opens the edit sidebar with empty deadline inputs for a hydrated node with null deadlines", async () => {
+      mockedGetMap.mockResolvedValueOnce({
+        id: 5,
+        name: "Test Map",
+        objectives: [
+          {
+            id: 1,
+            mapId: 5,
+            description: "No deadline here",
+            isTask: false,
+            counter: null,
+            deadlineStart: null,
+            deadlineEnd: null,
+          },
+        ],
+        edges: [],
+      });
+      const { container } = render(<Map />);
+      await waitForHydrated();
+
+      fireEvent.click(getNodeElements(container)[0]);
+
+      expect(screen.getByText("Edit objective")).toBeInTheDocument();
+      expect(screen.getByLabelText(/deadline start/i)).toHaveValue("");
+      expect(screen.getByLabelText(/deadline end/i)).toHaveValue("");
+    });
+  });
+
   // --- concurrent-open guard ---
 
   it("ignores a second pane click while the create sidebar is already open", async () => {

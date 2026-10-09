@@ -10,10 +10,10 @@ export interface ObjectiveResponse {
   description: string;
   isTask: boolean;
   counter: ObjectiveCounterResponse | null;
-  // Backend now requires both deadline bounds on every Objective (non-nullable
-  // DateTime columns), so they are always present ISO date strings here too.
-  deadlineStart: string;
-  deadlineEnd: string;
+  // Deadlines are nullable: an Objective may have no deadline at all. The two
+  // bounds are set or cleared as a pair, so both are null or both are ISO strings.
+  deadlineStart: string | null;
+  deadlineEnd: string | null;
 }
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
@@ -22,10 +22,10 @@ export async function createObjective(payload: {
   description: string;
   isTask: boolean;
   mapId: number;
-  // Required (not optional) because the backend rejects creates missing
-  // either bound now that both columns are mandatory.
-  deadlineStart: string;
-  deadlineEnd: string;
+  // ISO string or null, as a pair (both or neither). Kept required (not
+  // optional) so callers must state "no deadline" explicitly with null.
+  deadlineStart: string | null;
+  deadlineEnd: string | null;
 }): Promise<ObjectiveResponse> {
   const response = await fetch(`${API_BASE}/objectives`, {
     method: "POST",
@@ -48,9 +48,11 @@ export async function updateObjective(
   payload: {
     description: string;
     isTask: boolean;
-    // Required for the same reason as createObjective's payload above.
-    deadlineStart: string;
-    deadlineEnd: string;
+    // Pair of ISO string or null. Explicit null clears the deadline; an omitted
+    // key would mean "inherit" server-side, and JSON.stringify drops undefined,
+    // so these stay required (no undefined) to avoid silently inheriting.
+    deadlineStart: string | null;
+    deadlineEnd: string | null;
   },
 ): Promise<ObjectiveResponse> {
   const response = await fetch(`${API_BASE}/objectives/${id}`, {

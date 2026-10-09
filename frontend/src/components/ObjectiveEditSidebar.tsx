@@ -11,19 +11,18 @@ export interface ObjectiveData {
   description: string;
   isTask: boolean;
   counter: ObjectiveCounterData | null;
-  // ISO 8601 strings. Mandatory: every objective always has a deadline
-  // range once it exists server-side (see ObjectiveDeadlineService).
-  deadlineStart: string;
-  deadlineEnd: string;
+  // ISO 8601 strings. Deadlines are optional: both are null or both are set.
+  deadlineStart: string | null;
+  deadlineEnd: string | null;
 }
 
 export interface UpdateObjectiveFormData {
   description: string;
   isTask: boolean;
-  // ISO 8601 strings, always sent in full on submit (no partial update
-  // semantics for deadlines).
-  deadlineStart: string;
-  deadlineEnd: string;
+  // ISO 8601 strings or explicit null (clears the deadline). Always sent in
+  // full on submit, never omitted/undefined.
+  deadlineStart: string | null;
+  deadlineEnd: string | null;
 }
 
 // Converts an ISO 8601 string into the value format the native
@@ -67,29 +66,35 @@ export default function ObjectiveEditSidebar({
   const [description, setDescription] = useState(objective?.description ?? "");
   const [isTask, setIsTask] = useState(objective?.isTask ?? false);
   const [deadlineStart, setDeadlineStart] = useState(
-    objective ? toDatetimeLocalValue(objective.deadlineStart) : "",
+    objective?.deadlineStart
+      ? toDatetimeLocalValue(objective.deadlineStart)
+      : "",
   );
   const [deadlineEnd, setDeadlineEnd] = useState(
-    objective ? toDatetimeLocalValue(objective.deadlineEnd) : "",
+    objective?.deadlineEnd ? toDatetimeLocalValue(objective.deadlineEnd) : "",
   );
 
   if (!objective) return null;
 
-  // Save is blocked if the description is empty, either deadline field is
-  // empty (e.g. the user cleared it), or start is strictly after end. Equal
-  // start/end is allowed client-side — the server enforces the real minimum
-  // gap (see ObjectiveDeadlineService), so this is just a cheap sanity guard.
+  // Deadlines are all-or-nothing: both empty (no deadline) or both filled
+  // with start <= end. Exactly one filled gets an inline message; an inverted
+  // pair just blocks save. Equal start/end is allowed client-side — the server
+  // enforces the real minimum gap (see ObjectiveDeadlineService).
+  const hasStart = deadlineStart.trim().length > 0;
+  const hasEnd = deadlineEnd.trim().length > 0;
+  const exactlyOneDeadline = hasStart !== hasEnd;
   const deadlinesInvalid =
-    deadlineStart.trim().length === 0 ||
-    deadlineEnd.trim().length === 0 ||
-    new Date(deadlineStart) > new Date(deadlineEnd);
+    exactlyOneDeadline ||
+    (hasStart && hasEnd && new Date(deadlineStart) > new Date(deadlineEnd));
 
   function handleSubmit() {
     onSubmit({
       description,
       isTask,
-      deadlineStart: new Date(deadlineStart).toISOString(),
-      deadlineEnd: new Date(deadlineEnd).toISOString(),
+      // Always explicit: ISO string or null, never undefined, so an emptied
+      // field clears the stored deadline.
+      deadlineStart: hasStart ? new Date(deadlineStart).toISOString() : null,
+      deadlineEnd: hasEnd ? new Date(deadlineEnd).toISOString() : null,
     });
   }
 
@@ -153,7 +158,6 @@ export default function ObjectiveEditSidebar({
         id="obj-edit-deadline-start"
         className="obj-form-input"
         type="datetime-local"
-        required
         value={deadlineStart}
         onChange={(e) => setDeadlineStart(e.target.value)}
       />
@@ -169,10 +173,14 @@ export default function ObjectiveEditSidebar({
         id="obj-edit-deadline-end"
         className="obj-form-input"
         type="datetime-local"
-        required
         value={deadlineEnd}
         onChange={(e) => setDeadlineEnd(e.target.value)}
       />
+      {exactlyOneDeadline && (
+        <div className="obj-form-error">
+          Set both deadline fields, or leave both empty.
+        </div>
+      )}
     </ObjectiveSidebarShell>
   );
 }

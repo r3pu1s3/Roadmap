@@ -467,79 +467,102 @@ describe("PATCH /objectives/:id (end-to-end, real HTTP + real database)", () => 
 
 // --- Deadline validation (feature: objective deadlines) ---
 //
-// Going forward, deadlineStart and deadlineEnd are MANDATORY on every create
-// and update — not optional, and there is no "clear the deadline" or
-// "set only one field" operation. This is a deliberate amendment over an
-// earlier draft of the plan where they were nullable/optional. Deadlines are
-// mandatory end-to-end: enforced by validation at the API level, and by a
-// NOT NULL constraint at the DB level (deadlineStart/deadlineEnd are no
-// longer nullable columns — the prior legacy-null rows were cleaned up
-// before that migration landed).
+// deadlineStart and deadlineEnd are now OPTIONAL on both create and update,
+// but remain a strict pair: either both are provided, or both are
+// omitted/null. Providing exactly one of the two is a validation error
+// (400). On CREATE, there's no existing row to fall back to, so omitting
+// both simply creates the objective with null deadlines — there is no NOT
+// NULL constraint on these columns anymore (that's the schema migration this
+// feature slice starts from).
 //
-// An objective's own interval must additionally span at least one full
-// minute: deadlineEnd must be >= deadlineStart + 60 seconds. Equal
-// start/end (a zero-length window) and any gap under 60 seconds are both
-// rejected; a gap of exactly 60 seconds is the minimum valid boundary. This
-// own-interval minimum-gap rule is independent of, and stricter than, the
-// separate cross-node sequencing/umbrella boundary rules exercised in
-// ObjectiveEdgeController.e2e.test.ts, which remain inclusive (an ancestor's
-// deadlineEnd exactly equal to a task's deadlineStart, or an ancestor's
-// interval edge exactly touching its umbrella's, are still accepted there).
+// On UPDATE (PATCH), per-field presence is meaningful and distinguishes
+// three states, checked against the FINAL RESOLVED pair (request value
+// merged onto the existing row) rather than the raw request body directly:
+//   - key absent from the JSON body       -> unchanged, inherits the
+//     objective's current stored value for that field.
+//   - key present with value `null`       -> explicitly clears that field.
+//   - key present with a date value       -> sets that field to the date.
+// So omitting both deadline keys on a PATCH leaves an existing deadline
+// pair untouched; explicitly sending `deadlineStart: null, deadlineEnd:
+// null` is how a client clears a previously-set deadline. The both-or-
+// neither invariant is enforced on the resolved pair, so e.g. a PATCH that
+// omits deadlineStart while explicitly nulling deadlineEnd on an objective
+// that currently HAS a deadlineStart would resolve to "one set, one null"
+// and still be rejected.
+//
+// The separate cross-node deadline-propagation rules (sequencing for tasks,
+// umbrella/containment for goals, exercised end-to-end in
+// ObjectiveEdgeController.e2e.test.ts) pass vacuously for any pairwise
+// ancestor/downstream check where either side's (resolved) deadline is
+// null.
+//
+// An objective's own interval, whenever both deadlines ARE provided, must
+// additionally span at least one full minute: deadlineEnd must be >=
+// deadlineStart + 60 seconds. Equal start/end (a zero-length window) and any
+// gap under 60 seconds are both rejected; a gap of exactly 60 seconds is the
+// minimum valid boundary. This own-interval minimum-gap rule is independent
+// of, and stricter than, the separate cross-node sequencing/umbrella
+// boundary rules exercised in ObjectiveEdgeController.e2e.test.ts, which
+// remain inclusive (an ancestor's deadlineEnd exactly equal to a task's
+// deadlineStart, or an ancestor's interval edge exactly touching its
+// umbrella's, are still accepted there).
 const EXACTLY_ONE_MINUTE_AFTER_START = "2025-01-01T00:01:00.000Z";
 const LESS_THAN_ONE_MINUTE_AFTER_START = "2025-01-01T00:00:30.000Z";
 
 describe("POST /objectives - deadline validation (end-to-end, real HTTP + real database)", () => {
-  it("returns 400 and creates nothing when deadlineStart is missing", async () => {
+  it("returns 400 and creates nothing when deadlineStart is provided without deadlineEnd", async () => {
     const response = await request(app).post("/objectives").send({
-      description: "Missing start deadline",
-      isTask: false,
-      mapId,
-      deadlineEnd: VALID_DEADLINE_END,
-    });
-
-    expect(response.status).toBe(400);
-    // Message wording isn't dictated by the plan beyond "clear"; requiring
-    // it name the missing field mirrors this codebase's existing
-    // field-specific error convention (e.g. "mapId is required...").
-    expect(response.body.error.toLowerCase()).toContain("deadlinestart");
-
-    const found = await prisma.objective.findFirst({
-      where: { description: "Missing start deadline", mapId },
-    });
-    expect(found).toBeNull();
-  });
-
-  it("returns 400 and creates nothing when deadlineEnd is missing", async () => {
-    const response = await request(app).post("/objectives").send({
-      description: "Missing end deadline",
+      description: "Only start deadline provided",
       isTask: false,
       mapId,
       deadlineStart: VALID_DEADLINE_START,
     });
 
     expect(response.status).toBe(400);
-    expect(response.body.error.toLowerCase()).toContain("deadlineend");
+    // Both-or-neither: supplying exactly one of the pair is rejected, same
+    // as the other pairwise deadline-consistency checks below.
+    expect(response.body.error.toLowerCase()).toContain("deadline");
 
     const found = await prisma.objective.findFirst({
-      where: { description: "Missing end deadline", mapId },
+      where: { description: "Only start deadline provided", mapId },
     });
     expect(found).toBeNull();
   });
 
-  it("returns 400 and creates nothing when both deadlineStart and deadlineEnd are omitted entirely", async () => {
+  it("returns 400 and creates nothing when deadlineEnd is provided without deadlineStart", async () => {
     const response = await request(app).post("/objectives").send({
-      description: "No deadline at all",
+      description: "Only end deadline provided",
       isTask: false,
       mapId,
+      deadlineEnd: VALID_DEADLINE_END,
     });
 
     expect(response.status).toBe(400);
     expect(response.body.error.toLowerCase()).toContain("deadline");
 
     const found = await prisma.objective.findFirst({
-      where: { description: "No deadline at all", mapId },
+      where: { description: "Only end deadline provided", mapId },
     });
     expect(found).toBeNull();
+  });
+
+  it("creates an objective (201) with null deadlines when both are omitted", async () => {
+    const response = await request(app).post("/objectives").send({
+      description: "No deadline at all",
+      isTask: false,
+      mapId,
+    });
+
+    expect(response.status).toBe(201);
+    createdIds.push(response.body.id);
+    expect(response.body.deadlineStart).toBeNull();
+    expect(response.body.deadlineEnd).toBeNull();
+
+    const fromDb = await prisma.objective.findUnique({
+      where: { id: response.body.id },
+    });
+    expect(fromDb?.deadlineStart).toBeNull();
+    expect(fromDb?.deadlineEnd).toBeNull();
   });
 
   it("returns 400 and creates nothing when deadlineStart is after deadlineEnd", async () => {
@@ -634,9 +657,69 @@ describe("POST /objectives - deadline validation (end-to-end, real HTTP + real d
 });
 
 describe("PATCH /objectives/:id - deadline validation (end-to-end, real HTTP + real database)", () => {
-  it("returns 400 and leaves the stored deadline unchanged when deadlineStart is missing", async () => {
+  it("returns 400 and leaves the deadline null when the update provides only deadlineEnd, given the objective has no deadline", async () => {
     const createResponse = await request(app).post("/objectives").send({
-      description: "Has a deadline already",
+      description: "No deadline, end-only update",
+      isTask: false,
+      mapId,
+    });
+    // Only track the id after confirming the create succeeded, so a failed
+    // create never pushes `undefined` into the shared cleanup array.
+    expect(createResponse.status).toBe(201);
+    createdIds.push(createResponse.body.id);
+
+    // deadlineStart is omitted, so it inherits the stored null; deadlineEnd
+    // is a real date. The resolved pair is half a pair and must be rejected.
+    const updateResponse = await request(app)
+      .patch(`/objectives/${createResponse.body.id}`)
+      .send({
+        description: "No deadline, end-only update",
+        isTask: false,
+        deadlineEnd: VALID_DEADLINE_END,
+      });
+
+    expect(updateResponse.status).toBe(400);
+    expect(updateResponse.body.error.toLowerCase()).toContain("deadline");
+
+    const fromDb = await prisma.objective.findUnique({
+      where: { id: createResponse.body.id },
+    });
+    expect(fromDb?.deadlineStart).toBeNull();
+    expect(fromDb?.deadlineEnd).toBeNull();
+  });
+
+  it("returns 400 and leaves the deadline null when the update provides only deadlineStart, given the objective has no deadline", async () => {
+    const createResponse = await request(app).post("/objectives").send({
+      description: "No deadline, start-only update",
+      isTask: false,
+      mapId,
+    });
+    expect(createResponse.status).toBe(201);
+    createdIds.push(createResponse.body.id);
+
+    // deadlineEnd is omitted, so it inherits the stored null; deadlineStart
+    // is a real date. The resolved pair is half a pair and must be rejected.
+    const updateResponse = await request(app)
+      .patch(`/objectives/${createResponse.body.id}`)
+      .send({
+        description: "No deadline, start-only update",
+        isTask: false,
+        deadlineStart: VALID_DEADLINE_START,
+      });
+
+    expect(updateResponse.status).toBe(400);
+    expect(updateResponse.body.error.toLowerCase()).toContain("deadline");
+
+    const fromDb = await prisma.objective.findUnique({
+      where: { id: createResponse.body.id },
+    });
+    expect(fromDb?.deadlineStart).toBeNull();
+    expect(fromDb?.deadlineEnd).toBeNull();
+  });
+
+  it("clears a previously-set deadline to null over HTTP when both fields are explicitly set to null", async () => {
+    const createResponse = await request(app).post("/objectives").send({
+      description: "Deadline to be cleared",
       isTask: false,
       mapId,
       deadlineStart: VALID_DEADLINE_START,
@@ -644,22 +727,56 @@ describe("PATCH /objectives/:id - deadline validation (end-to-end, real HTTP + r
     });
     createdIds.push(createResponse.body.id);
 
+    // Explicit `null` is how a client clears an existing deadline — merely
+    // omitting the keys instead means "leave unchanged" (see the next test).
     const updateResponse = await request(app)
       .patch(`/objectives/${createResponse.body.id}`)
       .send({
-        description: "Has a deadline already",
+        description: "Deadline to be cleared",
         isTask: false,
-        deadlineEnd: VALID_DEADLINE_END,
+        deadlineStart: null,
+        deadlineEnd: null,
       });
 
-    expect(updateResponse.status).toBe(400);
-    expect(updateResponse.body.error.toLowerCase()).toContain("deadlinestart");
+    expect(updateResponse.status).toBe(200);
+    expect(updateResponse.body.deadlineStart).toBeNull();
+    expect(updateResponse.body.deadlineEnd).toBeNull();
 
-    // Confirms the earlier valid deadline survives a rejected update — there
-    // is no partial-update/clear-deadline behavior for this feature.
     const fromDb = await prisma.objective.findUnique({
       where: { id: createResponse.body.id },
     });
+    expect(fromDb?.deadlineStart).toBeNull();
+    expect(fromDb?.deadlineEnd).toBeNull();
+  });
+
+  it("preserves the existing deadline over HTTP when both deadline fields are omitted from a PATCH body", async () => {
+    const createResponse = await request(app).post("/objectives").send({
+      description: "Deadline that should survive an unrelated update",
+      isTask: false,
+      mapId,
+      deadlineStart: VALID_DEADLINE_START,
+      deadlineEnd: VALID_DEADLINE_END,
+    });
+    createdIds.push(createResponse.body.id);
+
+    // deadlineStart/deadlineEnd keys are fully absent here (not present,
+    // not null) — only an unrelated field is being updated. Omitted keys
+    // must inherit the objective's current stored deadline, not clear it.
+    const updateResponse = await request(app)
+      .patch(`/objectives/${createResponse.body.id}`)
+      .send({
+        description: "Deadline that survived an unrelated update",
+        isTask: false,
+      });
+
+    expect(updateResponse.status).toBe(200);
+
+    const fromDb = await prisma.objective.findUnique({
+      where: { id: createResponse.body.id },
+    });
+    expect(fromDb?.description).toBe(
+      "Deadline that survived an unrelated update",
+    );
     expect(fromDb?.deadlineStart?.toISOString()).toBe(
       new Date(VALID_DEADLINE_START).toISOString(),
     );
@@ -668,9 +785,9 @@ describe("PATCH /objectives/:id - deadline validation (end-to-end, real HTTP + r
     );
   });
 
-  it("returns 400 and leaves the stored deadline unchanged when deadlineEnd is missing", async () => {
+  it("updates only deadlineStart over HTTP and inherits the existing deadlineEnd when deadlineEnd is omitted from the PATCH body", async () => {
     const createResponse = await request(app).post("/objectives").send({
-      description: "Has a deadline already 2",
+      description: "Partial deadline update",
       isTask: false,
       mapId,
       deadlineStart: VALID_DEADLINE_START,
@@ -678,20 +795,67 @@ describe("PATCH /objectives/:id - deadline validation (end-to-end, real HTTP + r
     });
     createdIds.push(createResponse.body.id);
 
+    // New deadlineStart is still well within 60s+ of the EXISTING (inherited)
+    // deadlineEnd, so the resolved pair remains valid.
+    const newStart = "2025-02-01T00:00:00.000Z";
+
     const updateResponse = await request(app)
       .patch(`/objectives/${createResponse.body.id}`)
       .send({
-        description: "Has a deadline already 2",
+        description: "Partial deadline update",
         isTask: false,
-        deadlineStart: VALID_DEADLINE_START,
+        deadlineStart: newStart,
       });
 
-    expect(updateResponse.status).toBe(400);
-    expect(updateResponse.body.error.toLowerCase()).toContain("deadlineend");
+    expect(updateResponse.status).toBe(200);
 
     const fromDb = await prisma.objective.findUnique({
       where: { id: createResponse.body.id },
     });
+    expect(fromDb?.deadlineStart?.toISOString()).toBe(
+      new Date(newStart).toISOString(),
+    );
+    // deadlineEnd was omitted from the PATCH body entirely, so it must
+    // still hold the value set at creation time.
+    expect(fromDb?.deadlineEnd?.toISOString()).toBe(
+      new Date(VALID_DEADLINE_END).toISOString(),
+    );
+  });
+
+  it("sets a deadline over HTTP on an objective that previously had none", async () => {
+    const createResponse = await request(app).post("/objectives").send({
+      description: "No deadline yet",
+      isTask: false,
+      mapId,
+    });
+    // Asserted (and the id only tracked for cleanup) after confirming the
+    // create actually succeeded — pushing an id unconditionally here would
+    // push `undefined` into the shared `createdIds` cleanup array whenever
+    // this create 400s (as it currently does, pre-implementation), which
+    // then poisons every other test's `afterEach` in this file for the rest
+    // of the run.
+    expect(createResponse.status).toBe(201);
+    createdIds.push(createResponse.body.id);
+    expect(createResponse.body.deadlineStart).toBeNull();
+    expect(createResponse.body.deadlineEnd).toBeNull();
+
+    const updateResponse = await request(app)
+      .patch(`/objectives/${createResponse.body.id}`)
+      .send({
+        description: "No deadline yet",
+        isTask: false,
+        deadlineStart: VALID_DEADLINE_START,
+        deadlineEnd: VALID_DEADLINE_END,
+      });
+
+    expect(updateResponse.status).toBe(200);
+
+    const fromDb = await prisma.objective.findUnique({
+      where: { id: createResponse.body.id },
+    });
+    expect(fromDb?.deadlineStart?.toISOString()).toBe(
+      new Date(VALID_DEADLINE_START).toISOString(),
+    );
     expect(fromDb?.deadlineEnd?.toISOString()).toBe(
       new Date(VALID_DEADLINE_END).toISOString(),
     );

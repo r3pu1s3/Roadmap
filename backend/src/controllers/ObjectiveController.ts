@@ -25,9 +25,14 @@ export async function updateObjective(req: Request, res: Response) {
     // Only description/isTask/deadlineStart/deadlineEnd are forwarded — even
     // if the client sends an "id" in the body, it's silently ignored rather
     // than overriding the id parsed and validated from the URL param above.
-    // deadlineStart/deadlineEnd are now mandatory on every Objective, so
-    // they're whitelisted through here just like description/isTask; the
-    // service is responsible for rejecting missing/invalid values.
+    // Deadlines are optional but paired (both-or-neither, enforced in the
+    // service layer). On update, omitting a key means "leave unchanged /
+    // inherit", while an explicit null means "clear" — the controller
+    // doesn't need to distinguish these cases itself, it just passes the
+    // req.body fields through untouched (including undefined for absent
+    // keys, which Express's JSON body parser naturally produces). Do not
+    // default omitted keys to null here — that would collapse the
+    // "omitted" and "explicitly cleared" states the service distinguishes.
     const objective = await objectiveService.updateObjective({
       id,
       description: req.body.description,

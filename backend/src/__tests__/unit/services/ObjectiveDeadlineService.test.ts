@@ -19,17 +19,30 @@ import prisma from "../../../lib/prisma";
 //     id: number;
 //     description: string;
 //     isTask: boolean;
-//     deadlineStart: Date;
-//     deadlineEnd: Date;
+//     deadlineStart: Date | null;
+//     deadlineEnd: Date | null;
 //   }
 //
-//   Deadlines are universally mandatory (the schema's `deadlineStart`/
-//   `deadlineEnd` columns are NOT NULL, and the service layer requires both
-//   fields on every create/update) -- there is no legacy-null case to
-//   handle anywhere in this module.
+//   Deadlines are now NULLABLE (the schema's `deadlineStart`/`deadlineEnd`
+//   columns are nullable, and ObjectiveService accepts an objective with no
+//   deadline at all) -- but always both-or-neither: ObjectiveService's
+//   parseDeadlines guarantees deadlineStart/deadlineEnd are either both null
+//   or both real Dates before anything is persisted, so a node either HAS a
+//   deadline or it DOESN'T; a "lopsided" node (exactly one of the two fields
+//   null) is not a reachable state and this module doesn't need to guard
+//   against it independently per-field. `checkDeadlinePair` has a guard at
+//   the top, framed around that has-a-deadline-or-doesn't shape (e.g. a
+//   `hasNoDeadline(node)` check on `deadlineStart === null` as the proxy for
+//   "this node has no deadline"): if `ancestor` has no deadline OR
+//   `downstream` has no deadline, the function returns immediately with no
+//   error -- vacuously satisfied, skipping both the sequencing rule and the
+//   umbrella rule below. A pair is only ever checked for a real conflict
+//   once both `ancestor` and `downstream` have a real deadline.
 //
 //   checkDeadlinePair(ancestor: DeadlineNode, downstream: DeadlineNode): void
-//     - throws a plain Error identifying both objectives and the
+//     - if `ancestor` or `downstream` has no deadline, returns immediately
+//       (no-op, no error).
+//     - otherwise, throws a plain Error identifying both objectives and the
 //       conflicting dates if `downstream`'s rule (chosen by its own isTask)
 //       is violated by `ancestor`; no-op otherwise.
 //
@@ -64,8 +77,8 @@ vi.mock("../../../lib/prisma");
 function node(
   id: number,
   isTask: boolean,
-  deadlineStart: Date,
-  deadlineEnd: Date,
+  deadlineStart: Date | null,
+  deadlineEnd: Date | null,
   description = `objective-${id}`,
 ): DeadlineNode {
   return { id, description, isTask, deadlineStart, deadlineEnd };
@@ -157,6 +170,58 @@ describe("checkDeadlinePair", () => {
   });
 });
 
+describe("checkDeadlinePair - null deadlines", () => {
+  // A node's deadline is both-or-neither by construction (ObjectiveService's
+  // parseDeadlines guarantees deadlineStart/deadlineEnd are either both null
+  // or both real dates before anything is persisted, and checkDeadlinePair
+  // only ever sees data hydrated back out of the database) -- so "lopsided"
+  // fixtures (one field null, the other a real date) describe a state that
+  // can never actually reach this function and aren't tested here. Every
+  // "no deadline" node below is therefore built with BOTH fields null.
+  //
+  // Each scenario is otherwise built from a configuration that WOULD throw
+  // if the "no deadline" side had its original real dates (mirroring the
+  // violating fixtures in the `checkDeadlinePair` describe block above) --
+  // proving the null guard actually short-circuits the rule, rather than
+  // merely passing on an input that would have passed anyway.
+
+  // --- sequencing rule (downstream isTask: true) ---
+
+  it("does not throw when the ancestor has no deadline, even though a real ancestor interval would otherwise violate the sequencing rule", () => {
+    const ancestor = node(1, false, null, null); // would otherwise end at D10, after task starts D5
+    const task = node(2, true, D5, D15);
+    expect(() => checkDeadlinePair(ancestor, task)).not.toThrow();
+  });
+
+  it("does not throw when the downstream task has no deadline, even though the ancestor otherwise violates the sequencing rule", () => {
+    const ancestor = node(1, false, D1, D10); // would end after task starts, if task had a real start
+    const task = node(2, true, null, null);
+    expect(() => checkDeadlinePair(ancestor, task)).not.toThrow();
+  });
+
+  // --- umbrella rule (downstream isTask: false) ---
+
+  it("does not throw when the ancestor has no deadline, even though a real ancestor interval would otherwise overrun the goal's interval", () => {
+    const ancestor = node(1, true, null, null); // would otherwise end at D15, after goal's D10
+    const goal = node(2, false, D5, D10);
+    expect(() => checkDeadlinePair(ancestor, goal)).not.toThrow();
+  });
+
+  it("does not throw when the downstream goal has no deadline, even though the ancestor's interval would otherwise overrun the goal", () => {
+    const ancestor = node(1, true, D1, D6); // starts before goal's D5
+    const goal = node(2, false, null, null);
+    expect(() => checkDeadlinePair(ancestor, goal)).not.toThrow();
+  });
+
+  // --- both sides have no deadline ---
+
+  it("does not throw when both ancestor and downstream have no deadline", () => {
+    const ancestor = node(1, false, null, null);
+    const task = node(2, true, null, null);
+    expect(() => checkDeadlinePair(ancestor, task)).not.toThrow();
+  });
+});
+
 describe("getAncestors", () => {
   it("returns the direct childId-linked ancestor of a node", async () => {
     // Edge parentId:1, childId:2 means "2 leads to 1" -- 2 is upstream of 1.
@@ -231,6 +296,42 @@ describe("getDescendants", () => {
   });
 });
 
+describe("getAncestors / getDescendants - null deadline round-trip", () => {
+  // Sanity check that hydration doesn't coerce or drop null deadline fields
+  // on the way through objective.findMany -- a node with null deadlines
+  // should come back out exactly as it went in.
+
+  it("getAncestors round-trips a hydrated node with null deadlines unchanged", async () => {
+    const ancestorWithNullDeadlines = node(
+      2,
+      false,
+      null,
+      null,
+      "null-ancestor",
+    );
+    setupGraph([{ parentId: 1, childId: 2 }], [ancestorWithNullDeadlines]);
+
+    const result = await getAncestors(1);
+
+    expect(result).toEqual([ancestorWithNullDeadlines]);
+  });
+
+  it("getDescendants round-trips a hydrated node with null deadlines unchanged", async () => {
+    const descendantWithNullDeadlines = node(
+      2,
+      false,
+      null,
+      null,
+      "null-descendant",
+    );
+    setupGraph([{ parentId: 2, childId: 1 }], [descendantWithNullDeadlines]);
+
+    const result = await getDescendants(1);
+
+    expect(result).toEqual([descendantWithNullDeadlines]);
+  });
+});
+
 describe("validateDeadlinesAgainstGraph", () => {
   it("rejects when an existing ancestor violates the sequencing rule against this (isTask: true) node", async () => {
     const self = node(1, true, D10, D15);
@@ -286,6 +387,28 @@ describe("validateDeadlinesAgainstGraph", () => {
 
     await expect(validateDeadlinesAgainstGraph(self)).rejects.toThrow();
   });
+
+  // --- null deadlines resolve vacuously ---
+
+  it("resolves when self has null deadlines, even though a real-dated ancestor would otherwise violate the rule against a non-null self", async () => {
+    const self = node(1, true, null, null);
+    // Would violate the sequencing rule (ends D15, after self's D10 start)
+    // if self had real deadlines.
+    const wouldBeViolatingAncestor = node(2, false, D10, D15, "would-violate");
+    setupGraph([{ parentId: 1, childId: 2 }], [wouldBeViolatingAncestor]);
+
+    await expect(validateDeadlinesAgainstGraph(self)).resolves.toBeUndefined();
+  });
+
+  it("resolves when self has real deadlines but the ancestor/descendant has null deadlines", async () => {
+    const self = node(1, true, D10, D15);
+    // Would violate the sequencing rule against self if it had real dates
+    // overlapping self's start, but it's fully null instead.
+    const nullAncestor = node(2, false, null, null, "null-ancestor");
+    setupGraph([{ parentId: 1, childId: 2 }], [nullAncestor]);
+
+    await expect(validateDeadlinesAgainstGraph(self)).resolves.toBeUndefined();
+  });
 });
 
 describe("validateEdgeDeadlines", () => {
@@ -320,5 +443,34 @@ describe("validateEdgeDeadlines", () => {
     setupGraph([{ parentId: 2, childId: 3 }], [grandAncestorOfChild]);
 
     await expect(validateEdgeDeadlines(parent, child)).rejects.toThrow();
+  });
+
+  // --- null deadlines resolve vacuously ---
+  // A node's deadline is both-or-neither (see the top-of-file contract
+  // note), so "no deadline" fixtures here are built with BOTH fields null,
+  // not a lopsided single-field null -- that combination can't actually
+  // occur given the invariant enforced at creation/update time.
+
+  it("resolves when the parent has no deadline, even though the direct pair would otherwise violate the sequencing rule", async () => {
+    // Mirrors the first rejecting test above (parent task starting D5, child
+    // ending D6, which is after D5), but with the parent having no deadline
+    // at all.
+    const parent = node(1, true, null, null, "parent-task");
+    const child = node(2, false, D6, D15, "child");
+    setupGraph([], []);
+
+    await expect(validateEdgeDeadlines(parent, child)).resolves.toBeUndefined();
+  });
+
+  it("resolves when the child has no deadline, even though the direct pair would otherwise violate the umbrella rule", async () => {
+    // Mirrors "rejects when a pre-existing ancestor of the child would
+    // violate the umbrella rule" style scenario but applied directly to the
+    // proposed pair: goal-parent [D5, D10], child nominally [D5, D20]
+    // (overruns the parent), with the child having no deadline at all.
+    const parent = node(1, false, D5, D10, "goal-parent");
+    const child = node(2, false, null, null, "child");
+    setupGraph([], []);
+
+    await expect(validateEdgeDeadlines(parent, child)).resolves.toBeUndefined();
   });
 });
