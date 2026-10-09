@@ -24,13 +24,13 @@ model Objective {
   description String
   isTask   Boolean
 
-  // Required deadline window for the objective, modeled as a start/end range
-  // rather than a single instant. Originally nullable while the feature was
-  // being introduced; made mandatory at the DB level once all pre-existing
-  // "legacy" rows were confirmed/backfilled to have both dates set, so every
-  // Objective now always has a deadline and callers don't need to null-check.
-  deadlineStart DateTime
-  deadlineEnd   DateTime
+  // Optional deadline window for the objective, modeled as a start/end range
+  // rather than a single instant. An Objective may have no deadline at all
+  // (both columns null). deadlineStart/deadlineEnd are a pair: the service
+  // layer (ObjectiveService.parseDeadlines) rejects requests that set exactly
+  // one of the two, so in practice they're either both null or both set.
+  deadlineStart DateTime?
+  deadlineEnd   DateTime?
 
   mapId    Int
   map   Map @relation(fields: [mapId], references: [id], onDelete: Cascade)

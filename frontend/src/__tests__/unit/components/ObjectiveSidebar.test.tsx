@@ -231,7 +231,9 @@ describe("ObjectiveSidebar", () => {
     expect(screen.getByLabelText(/deadline end/i)).toHaveValue("");
   });
 
-  it("keeps Submit disabled on the deadline step until both deadlines are set", async () => {
+  // --- nullable deadlines: both-empty is valid, exactly-one-filled is not ---
+
+  it("allows Submit with both deadline fields left empty", async () => {
     const user = userEvent.setup();
     render(
       <ObjectiveSidebar isOpen={true} onClose={vi.fn()} onSubmit={vi.fn()} />,
@@ -240,7 +242,120 @@ describe("ObjectiveSidebar", () => {
     await user.click(screen.getByText("Objective"));
     await goToDeadlineStep(user, "Get stronger");
 
+    // Deadlines are now optional: untouched fields must not block Submit.
+    expect(screen.getByText("Submit")).not.toBeDisabled();
+  });
+
+  it("keeps Submit disabled when only deadline start is filled", async () => {
+    const user = userEvent.setup();
+    render(
+      <ObjectiveSidebar isOpen={true} onClose={vi.fn()} onSubmit={vi.fn()} />,
+    );
+
+    await user.click(screen.getByText("Objective"));
+    await goToDeadlineStep(user, "Get stronger");
+    fireEvent.change(screen.getByLabelText(/deadline start/i), {
+      target: { value: "2026-08-21T14:30" },
+    });
+
     expect(screen.getByText("Submit")).toBeDisabled();
+  });
+
+  it("keeps Submit disabled when only deadline end is filled", async () => {
+    const user = userEvent.setup();
+    render(
+      <ObjectiveSidebar isOpen={true} onClose={vi.fn()} onSubmit={vi.fn()} />,
+    );
+
+    await user.click(screen.getByText("Objective"));
+    await goToDeadlineStep(user, "Get stronger");
+    fireEvent.change(screen.getByLabelText(/deadline end/i), {
+      target: { value: "2026-08-21T14:30" },
+    });
+
+    expect(screen.getByText("Submit")).toBeDisabled();
+  });
+
+  it("shows the 'set both' inline message when only deadline start is filled", async () => {
+    const user = userEvent.setup();
+    render(
+      <ObjectiveSidebar isOpen={true} onClose={vi.fn()} onSubmit={vi.fn()} />,
+    );
+
+    await user.click(screen.getByText("Objective"));
+    await goToDeadlineStep(user, "Get stronger");
+    fireEvent.change(screen.getByLabelText(/deadline start/i), {
+      target: { value: "2026-08-21T14:30" },
+    });
+
+    expect(
+      screen.getByText("Set both deadline fields, or leave both empty."),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the 'set both' inline message when only deadline end is filled", async () => {
+    const user = userEvent.setup();
+    render(
+      <ObjectiveSidebar isOpen={true} onClose={vi.fn()} onSubmit={vi.fn()} />,
+    );
+
+    await user.click(screen.getByText("Objective"));
+    await goToDeadlineStep(user, "Get stronger");
+    fireEvent.change(screen.getByLabelText(/deadline end/i), {
+      target: { value: "2026-08-21T14:30" },
+    });
+
+    expect(
+      screen.getByText("Set both deadline fields, or leave both empty."),
+    ).toBeInTheDocument();
+  });
+
+  it("does not show the 'set both' message when both deadline fields are empty", async () => {
+    const user = userEvent.setup();
+    render(
+      <ObjectiveSidebar isOpen={true} onClose={vi.fn()} onSubmit={vi.fn()} />,
+    );
+
+    await user.click(screen.getByText("Objective"));
+    await goToDeadlineStep(user, "Get stronger");
+
+    expect(
+      screen.queryByText("Set both deadline fields, or leave both empty."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not show the 'set both' message when both deadline fields are filled", async () => {
+    const user = userEvent.setup();
+    render(
+      <ObjectiveSidebar isOpen={true} onClose={vi.fn()} onSubmit={vi.fn()} />,
+    );
+
+    await user.click(screen.getByText("Objective"));
+    await goToDeadlineStep(user, "Get stronger");
+    fillDeadlines("2026-08-21T14:30", "2026-08-21T15:30");
+
+    expect(
+      screen.queryByText("Set both deadline fields, or leave both empty."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides the 'set both' message again once the lone filled field is cleared", async () => {
+    const user = userEvent.setup();
+    render(
+      <ObjectiveSidebar isOpen={true} onClose={vi.fn()} onSubmit={vi.fn()} />,
+    );
+
+    await user.click(screen.getByText("Objective"));
+    await goToDeadlineStep(user, "Get stronger");
+    const start = screen.getByLabelText(/deadline start/i);
+    fireEvent.change(start, { target: { value: "2026-08-21T14:30" } });
+    fireEvent.change(start, { target: { value: "" } });
+
+    // Clearing back to both-empty must return to the valid state.
+    expect(
+      screen.queryByText("Set both deadline fields, or leave both empty."),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Submit")).not.toBeDisabled();
   });
 
   it("keeps Submit disabled when deadline start is after deadline end", async () => {
@@ -385,6 +500,31 @@ describe("ObjectiveSidebar", () => {
       description: "Do {pushups} pushups",
       deadlineStart: new Date(startValue).toISOString(),
       deadlineEnd: new Date(endValue).toISOString(),
+    });
+  });
+
+  it("calls onSubmit with deadlineStart and deadlineEnd as null when both are left empty", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(
+      <ObjectiveSidebar isOpen={true} onClose={vi.fn()} onSubmit={onSubmit} />,
+    );
+
+    await user.click(screen.getByText("Objective"));
+    await goToDeadlineStep(user, "Get stronger");
+    await user.click(screen.getByText("Submit"));
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    // Must be exactly null (not undefined, "", or an Invalid Date throw):
+    // the API distinguishes "no deadline" (null) from "omitted".
+    const payload = onSubmit.mock.calls[0][0];
+    expect(payload.deadlineStart).toBeNull();
+    expect(payload.deadlineEnd).toBeNull();
+    expect(payload).toEqual({
+      isTask: false,
+      description: "Get stronger",
+      deadlineStart: null,
+      deadlineEnd: null,
     });
   });
 

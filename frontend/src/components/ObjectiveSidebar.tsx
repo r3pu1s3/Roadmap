@@ -7,8 +7,9 @@ export interface ObjectiveFormData {
   // Full ISO 8601 strings (converted from the raw <input type="datetime-local">
   // values at submit time) — the server expects/persists ISO timestamps, and
   // converting here keeps the raw local-time strings purely a UI concern.
-  deadlineStart: string;
-  deadlineEnd: string;
+  // null means "no deadline"; both are null or both are set.
+  deadlineStart: string | null;
+  deadlineEnd: string | null;
 }
 
 type Step = "type" | "description" | "deadline";
@@ -62,18 +63,22 @@ export default function ObjectiveSidebar({
     onSubmit({
       isTask,
       description,
-      deadlineStart: new Date(deadlineStart).toISOString(),
-      deadlineEnd: new Date(deadlineEnd).toISOString(),
+      // Explicit null (never undefined) so the server clears/ignores deadlines.
+      deadlineStart: hasStart ? new Date(deadlineStart).toISOString() : null,
+      deadlineEnd: hasEnd ? new Date(deadlineEnd).toISOString() : null,
     });
   }
 
-  // Deliberately loose client-side check (start <= end only) — the server
-  // enforces the real "at least 60s apart" rule and reports violations via
-  // errorMessage. Equal start/end must remain enabled here.
+  // Deadlines are optional but all-or-nothing: both empty is valid, both
+  // filled is valid if start <= end, exactly one filled is invalid. The loose
+  // start <= end check is deliberate — the server enforces the real "at least
+  // 60s apart" rule and reports it via errorMessage. Equal values stay enabled.
+  const hasStart = deadlineStart.length > 0;
+  const hasEnd = deadlineEnd.length > 0;
+  const exactlyOneFilled = hasStart !== hasEnd;
   const deadlinesValid =
-    deadlineStart.length > 0 &&
-    deadlineEnd.length > 0 &&
-    new Date(deadlineStart) <= new Date(deadlineEnd);
+    (!hasStart && !hasEnd) ||
+    (hasStart && hasEnd && new Date(deadlineStart) <= new Date(deadlineEnd));
 
   const title = `New ${step === "type" ? "node" : isTask ? "task" : "objective"}`;
 
@@ -173,6 +178,11 @@ export default function ObjectiveSidebar({
             value={deadlineEnd}
             onChange={(e) => setDeadlineEnd(e.target.value)}
           />
+          {exactlyOneFilled && (
+            <p className="obj-form-error">
+              Set both deadline fields, or leave both empty.
+            </p>
+          )}
         </>
       )}
     </ObjectiveSidebarShell>

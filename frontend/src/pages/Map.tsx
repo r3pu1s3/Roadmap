@@ -504,11 +504,12 @@ function MapInner() {
         counter: (editingNode.data.counter as ObjectiveData["counter"]) ?? null,
         // editingNode.data is always either the hydrated ObjectiveResponse
         // spread (on load) or the { ...created/updated, dbId } spread (after
-        // a create/edit save), both of which carry these now-required
-        // fields as full ISO strings — ObjectiveEditSidebar converts them to
-        // datetime-local for display itself.
-        deadlineStart: editingNode.data.deadlineStart as string,
-        deadlineEnd: editingNode.data.deadlineEnd as string,
+        // a create/edit save), both of which carry these nullable fields as
+        // full ISO strings or null (no deadline set) —
+        // ObjectiveEditSidebar converts them to datetime-local for display
+        // itself.
+        deadlineStart: editingNode.data.deadlineStart as string | null,
+        deadlineEnd: editingNode.data.deadlineEnd as string | null,
       }
     : null;
 

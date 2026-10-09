@@ -39,12 +39,10 @@ const objectives: Record<string, number> = {};
 // A wide, arbitrary, mutually-consistent deadline window shared by every
 // structural fixture below (cycle/multi-parent/cross-map/self-ref/cascade).
 // These fixtures are deliberately unrelated to the deadline feature's
-// validation rules, but a valid deadline must still be supplied on every
-// Objective row: deadlines are mandatory end-to-end now — both columns are
-// NOT NULL at the DB level — so a bare `prisma.objective.create` with no
-// deadline fields fails a raw NOT NULL constraint, even though this helper
-// bypasses the service layer (and therefore the service's own validation)
-// entirely.
+// validation rules; deadlineStart/deadlineEnd are nullable columns now, but
+// this helper still supplies a valid pair so these structural fixtures stay
+// unaffected by (and don't incidentally exercise) the null-deadline
+// vacuous-pass behavior exercised explicitly further down this file.
 const FIXTURE_DEADLINE_START = "2025-01-01T00:00:00.000Z";
 const FIXTURE_DEADLINE_END = "2025-12-31T00:00:00.000Z";
 
@@ -136,8 +134,11 @@ const createdObjectiveIds: number[] = [];
 async function createObjectiveViaHttp(options: {
   description: string;
   isTask: boolean;
-  deadlineStart: string;
-  deadlineEnd: string;
+  // Optional: omitting both is how a test creates an objective with null
+  // deadlines (the pair is nullable now), exercised by the
+  // "vacuous pass" describe block below.
+  deadlineStart?: string;
+  deadlineEnd?: string;
   mapId: number;
 }) {
   const response = await request(app).post("/objectives").send(options);
@@ -413,6 +414,14 @@ describe("Database cascade behavior (real database, existing schema — not new 
 // service's own validation at creation time and carries the exact,
 // scenario-specific deadline values each test needs — not the structural
 // fixtures' shared, arbitrary window.
+//
+// deadlineStart/deadlineEnd are nullable now: both rules above are pairwise
+// checks between an ancestor and a downstream node, and whenever either
+// side of a given pairwise check has a null deadline, that check passes
+// vacuously (there's nothing to compare, so nothing to violate) rather than
+// erroring. The "vacuous pass" describe block near the end of this section
+// exercises that directly, using a parent/child pair whose real deadlines
+// would otherwise violate the sequencing rule.
 
 describe("Deadline validation on edge creation — sequencing rule (downstream isTask: true)", () => {
   it("returns 400 when an ancestor's deadlineEnd falls after the task's deadlineStart", async () => {
@@ -520,6 +529,64 @@ describe("Deadline validation on edge creation — umbrella rule (downstream isT
       mapId,
       deadlineStart: "2025-02-01T00:00:00.000Z",
       deadlineEnd: "2025-06-01T00:00:00.000Z",
+    });
+
+    const response = await request(app).post("/objective-edges").send({
+      parentId: umbrella,
+      childId: ancestor,
+    });
+
+    expect(response.status).toBe(201);
+    createdEdgeIds.push(response.body.id);
+  });
+});
+
+describe("Deadline validation passes vacuously when either side of a pairwise check has a null deadline", () => {
+  it("creates the edge (201) under the sequencing rule when the ancestor has no deadline, even though its deadline would otherwise violate sequencing", async () => {
+    const task = await createObjectiveViaHttp({
+      description: "Run the marathon (vacuous sequencing)",
+      isTask: true,
+      mapId,
+      deadlineStart: "2025-03-01T00:00:00.000Z",
+      deadlineEnd: "2025-04-01T00:00:00.000Z",
+    });
+    // No deadline at all. If this objective instead had, say,
+    // deadlineEnd: "2025-03-15T00:00:00.000Z" (after the task's
+    // deadlineStart), the sequencing rule would reject this edge — see the
+    // "sequencing rule" describe block above. With a null deadline, there is
+    // nothing to compare, so the check must pass instead of erroring.
+    const ancestor = await createObjectiveViaHttp({
+      description: "Build up mileage (vacuous sequencing)",
+      isTask: false,
+      mapId,
+    });
+
+    const response = await request(app).post("/objective-edges").send({
+      parentId: task,
+      childId: ancestor,
+    });
+
+    expect(response.status).toBe(201);
+    createdEdgeIds.push(response.body.id);
+  });
+
+  it("creates the edge (201) under the umbrella rule when the ancestor has no deadline, even though its deadline would otherwise violate containment", async () => {
+    const umbrella = await createObjectiveViaHttp({
+      description: "Get fit this year (vacuous umbrella)",
+      isTask: false,
+      mapId,
+      deadlineStart: "2025-01-01T00:00:00.000Z",
+      deadlineEnd: "2025-12-31T00:00:00.000Z",
+    });
+    // No deadline at all. If this objective instead had, say,
+    // deadlineStart: "2024-12-01T00:00:00.000Z" (starting before the
+    // umbrella), the umbrella/containment rule would reject this edge — see
+    // the "umbrella rule" describe block above. With a null deadline, the
+    // containment check has nothing to compare and must pass instead.
+    const ancestor = await createObjectiveViaHttp({
+      description: "Couch to 5k (vacuous umbrella)",
+      isTask: false,
+      mapId,
     });
 
     const response = await request(app).post("/objective-edges").send({

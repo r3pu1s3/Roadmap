@@ -5,7 +5,14 @@ import ObjectiveEditSidebar, {
   type ObjectiveData,
 } from "../../../components/ObjectiveEditSidebar";
 
-const plainObjective: ObjectiveData = {
+// Fixtures with concrete deadlines are narrowed to non-null strings so the
+// existing pre-fill tests type-check now that ObjectiveData allows null.
+type DatedObjective = ObjectiveData & {
+  deadlineStart: string;
+  deadlineEnd: string;
+};
+
+const plainObjective: DatedObjective = {
   id: 1,
   description: "Get stronger this year",
   isTask: false,
@@ -14,7 +21,16 @@ const plainObjective: ObjectiveData = {
   deadlineEnd: "2026-08-21T10:00:00.000Z",
 };
 
-const taskObjective: ObjectiveData = {
+const nullDeadlineObjective: ObjectiveData = {
+  id: 3,
+  description: "No deadline yet",
+  isTask: false,
+  counter: null,
+  deadlineStart: null,
+  deadlineEnd: null,
+};
+
+const taskObjective: DatedObjective = {
   id: 2,
   description: "Do {pushups} pushups",
   isTask: true,
@@ -444,6 +460,182 @@ describe("ObjectiveEditSidebar", () => {
         deadlineStart: new Date(newStartValue).toISOString(),
         deadlineEnd: plainObjective.deadlineEnd,
       }),
+    );
+  });
+
+  // --- nullable deadlines ---
+
+  const DEADLINE_MSG = "Set both deadline fields, or leave both empty.";
+
+  function renderNull(onSubmit = vi.fn()) {
+    render(
+      <ObjectiveEditSidebar
+        isOpen={true}
+        objective={nullDeadlineObjective}
+        onClose={vi.fn()}
+        onSubmit={onSubmit}
+      />,
+    );
+    return onSubmit;
+  }
+
+  // Null stored deadlines must map to empty input values, not "Invalid Date" strings or a crash.
+  it("renders empty deadline inputs for an objective whose deadlines are null", () => {
+    renderNull();
+
+    expect(screen.getByLabelText(/deadline start/i)).toHaveValue("");
+    expect(screen.getByLabelText(/deadline end/i)).toHaveValue("");
+  });
+
+  // Deadlines are optional now, so the inputs must not carry the HTML `required` attribute.
+  it("does not mark the deadline inputs as required", () => {
+    renderNull();
+
+    expect(screen.getByLabelText(/deadline start/i)).not.toBeRequired();
+    expect(screen.getByLabelText(/deadline end/i)).not.toBeRequired();
+  });
+
+  it("enables Save and shows no deadline message when both deadlines are empty", () => {
+    renderNull();
+
+    expect(screen.getByText("Save")).not.toBeDisabled();
+    expect(screen.queryByText(DEADLINE_MSG)).not.toBeInTheDocument();
+  });
+
+  it("disables Save and shows the inline message when only deadline start is filled", () => {
+    renderNull();
+
+    fireEvent.change(screen.getByLabelText(/deadline start/i), {
+      target: { value: "2026-08-20T10:00" },
+    });
+
+    expect(screen.getByText("Save")).toBeDisabled();
+    expect(screen.getByText(DEADLINE_MSG)).toBeInTheDocument();
+  });
+
+  it("disables Save and shows the inline message when only deadline end is filled", () => {
+    renderNull();
+
+    fireEvent.change(screen.getByLabelText(/deadline end/i), {
+      target: { value: "2026-08-20T10:00" },
+    });
+
+    expect(screen.getByText("Save")).toBeDisabled();
+    expect(screen.getByText(DEADLINE_MSG)).toBeInTheDocument();
+  });
+
+  // The message is for the "exactly one filled" case only; an inverted pair is invalid but a different problem.
+  it("does not show the one-filled message for an inverted (start after end) pair", () => {
+    render(
+      <ObjectiveEditSidebar
+        isOpen={true}
+        objective={plainObjective}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/deadline start/i), {
+      target: { value: "2026-08-22T10:00" },
+    });
+
+    expect(screen.getByText("Save")).toBeDisabled();
+    expect(screen.queryByText(DEADLINE_MSG)).not.toBeInTheDocument();
+  });
+
+  it("shows the inline message when a previously-filled objective has just one field cleared", () => {
+    render(
+      <ObjectiveEditSidebar
+        isOpen={true}
+        objective={plainObjective}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/deadline start/i), {
+      target: { value: "" },
+    });
+
+    expect(screen.getByText(DEADLINE_MSG)).toBeInTheDocument();
+  });
+
+  // Core contract: untouched null deadlines go out as explicit null keys, never undefined/omitted/"".
+  it("submits explicit null for both deadlines when a null-deadline objective is saved untouched", async () => {
+    const user = userEvent.setup();
+    const onSubmit = renderNull();
+
+    await user.click(screen.getByText("Save"));
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    const payload = onSubmit.mock.calls[0][0];
+    expect(payload).toHaveProperty("deadlineStart");
+    expect(payload).toHaveProperty("deadlineEnd");
+    expect(payload.deadlineStart).toBeNull();
+    expect(payload.deadlineEnd).toBeNull();
+    expect(payload).toEqual({
+      description: "No deadline yet",
+      isTask: false,
+      deadlineStart: null,
+      deadlineEnd: null,
+    });
+  });
+
+  it("submits real ISO strings when both previously-empty deadlines are filled", async () => {
+    const user = userEvent.setup();
+    const onSubmit = renderNull();
+
+    const start = "2026-08-20T09:30";
+    const end = "2026-08-21T11:45";
+    fireEvent.change(screen.getByLabelText(/deadline start/i), {
+      target: { value: start },
+    });
+    fireEvent.change(screen.getByLabelText(/deadline end/i), {
+      target: { value: end },
+    });
+    expect(screen.getByText("Save")).not.toBeDisabled();
+    await user.click(screen.getByText("Save"));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deadlineStart: new Date(start).toISOString(),
+        deadlineEnd: new Date(end).toISOString(),
+      }),
+    );
+  });
+
+  // Clearing both fields is how a user removes an existing deadline: Save must stay clickable and send null.
+  it("submits explicit null for both deadlines when the user clears both previously-filled fields", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(
+      <ObjectiveEditSidebar
+        isOpen={true}
+        objective={plainObjective}
+        onClose={vi.fn()}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/deadline start/i), {
+      target: { value: "" },
+    });
+    fireEvent.change(screen.getByLabelText(/deadline end/i), {
+      target: { value: "" },
+    });
+
+    expect(screen.getByText("Save")).not.toBeDisabled();
+    expect(screen.queryByText(DEADLINE_MSG)).not.toBeInTheDocument();
+    await user.click(screen.getByText("Save"));
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    const payload = onSubmit.mock.calls[0][0];
+    expect(payload).toHaveProperty("deadlineStart");
+    expect(payload).toHaveProperty("deadlineEnd");
+    expect(payload.deadlineStart).toBeNull();
+    expect(payload.deadlineEnd).toBeNull();
+    expect(payload).toEqual(
+      expect.objectContaining({ deadlineStart: null, deadlineEnd: null }),
     );
   });
 

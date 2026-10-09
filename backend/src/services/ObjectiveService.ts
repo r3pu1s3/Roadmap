@@ -21,8 +21,9 @@ export interface CreateObjectiveInput {
   isTask: boolean;
   mapId: number;
   // Accepted as raw JSON values (e.g. ISO strings from the controller's
-  // req.body pass-through), not `Date` instances -- parseDeadlines below
-  // normalizes them into real Dates before anything touches Prisma.
+  // req.body pass-through), not `Date` instances -- resolveDeadlines below
+  // normalizes them into real Dates (or null) before anything touches
+  // Prisma.
   deadlineStart: unknown;
   deadlineEnd: unknown;
 }
@@ -52,40 +53,78 @@ function validateObjectiveInput(description: string, isTask: boolean) {
   }
 }
 
-// Deadlines are mandatory on every create/update (schema columns are NOT
-// NULL, and this is enforced redundantly here so the service gives a clean
-// domain error instead of a raw Prisma constraint failure). Both fields
-// must be present, parse to valid dates, and span at least
-// MIN_DEADLINE_DURATION_MS -- a single instant or an inverted range are
-// both rejected as not being a usable planning window.
-function parseDeadlines(
-  deadlineStart: unknown,
-  deadlineEnd: unknown,
-): { deadlineStart: Date; deadlineEnd: Date } {
-  if (deadlineStart === undefined || deadlineStart === null) {
-    throw new Error("deadlineStart is required");
+const BOTH_OR_NEITHER_ERROR =
+  "deadlineStart and deadlineEnd must both be set or both be null";
+
+// Deadlines are nullable: a resolved pair is either both null ("no
+// deadline") or both real Dates -- never lopsided. "Resolving" a single
+// field means:
+//   - input === undefined -> inherit `existingValue` (used on update to mean
+//     "omitted, leave unchanged"; create always passes `null` as the
+//     existing value, since there's no prior row, so omitted-on-create
+//     collapses to "no deadline" just like explicit null does).
+//   - input === null       -> explicitly clear the field (resolves to null).
+//   - anything else        -> parse it as a Date, throwing on an invalid one.
+function resolveDeadlineField(
+  input: unknown,
+  existingValue: Date | null,
+  fieldName: "deadlineStart" | "deadlineEnd",
+): Date | null {
+  if (input === undefined) return existingValue;
+  if (input === null) return null;
+
+  const parsed = new Date(input as string | number | Date);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`${fieldName} must be a valid date`);
   }
-  if (deadlineEnd === undefined || deadlineEnd === null) {
-    throw new Error("deadlineEnd is required");
+  return parsed;
+}
+
+// Resolves a raw (deadlineStart, deadlineEnd) input pair against whatever
+// the field already holds (null/null on create, since there's no existing
+// row), then validates the RESOLVED pair:
+//   - exactly one resolves to non-null -> both-or-neither error.
+//   - both resolve to non-null -> existing valid-date-format (handled by
+//     resolveDeadlineField above) + 60-second-minimum-duration checks apply.
+//   - both resolve to null -> valid "no deadline" state, no further checks.
+function resolveDeadlines(
+  input: { deadlineStart: unknown; deadlineEnd: unknown },
+  existing: { deadlineStart: Date | null; deadlineEnd: Date | null },
+): { deadlineStart: Date | null; deadlineEnd: Date | null } {
+  const resolvedStart = resolveDeadlineField(
+    input.deadlineStart,
+    existing.deadlineStart,
+    "deadlineStart",
+  );
+  const resolvedEnd = resolveDeadlineField(
+    input.deadlineEnd,
+    existing.deadlineEnd,
+    "deadlineEnd",
+  );
+
+  if ((resolvedStart === null) !== (resolvedEnd === null)) {
+    throw new Error(BOTH_OR_NEITHER_ERROR);
   }
 
-  const start = new Date(deadlineStart as string | number | Date);
-  const end = new Date(deadlineEnd as string | number | Date);
-
-  if (Number.isNaN(start.getTime())) {
-    throw new Error("deadlineStart must be a valid date");
-  }
-  if (Number.isNaN(end.getTime())) {
-    throw new Error("deadlineEnd must be a valid date");
-  }
-
-  if (end.getTime() - start.getTime() < MIN_DEADLINE_DURATION_MS) {
-    throw new Error(
-      "deadlineEnd must be at least 60 seconds after deadlineStart",
-    );
+  if (resolvedStart !== null && resolvedEnd !== null) {
+    if (
+      resolvedEnd.getTime() - resolvedStart.getTime() <
+      MIN_DEADLINE_DURATION_MS
+    ) {
+      throw new Error(
+        "deadlineEnd must be at least 60 seconds after deadlineStart",
+      );
+    }
   }
 
-  return { deadlineStart: start, deadlineEnd: end };
+  return { deadlineStart: resolvedStart, deadlineEnd: resolvedEnd };
+}
+
+// Null-safe equality check used to detect whether a node's deadline interval
+// actually changed across an update -- null-to-null counts as unchanged.
+function dateEquals(a: Date | null, b: Date | null): boolean {
+  if (a === null || b === null) return a === b;
+  return a.getTime() === b.getTime();
 }
 
 function resolveCounterLabel(
@@ -128,10 +167,13 @@ export async function createObjective(data: CreateObjectiveInput) {
 
   const counterLabel = resolveCounterLabel(description, isTask);
 
-  // Deadlines are mandatory on every create; there is no "no deadline" path.
-  const { deadlineStart, deadlineEnd } = parseDeadlines(
-    data.deadlineStart,
-    data.deadlineEnd,
+  // There is no existing row on create, so "omitted" and "explicit null"
+  // are equivalent -- both resolve to null via the { deadlineStart: null,
+  // deadlineEnd: null } existing-value stand-in below, producing a "no
+  // deadline" objective unless real values are actually provided.
+  const { deadlineStart, deadlineEnd } = resolveDeadlines(
+    { deadlineStart: data.deadlineStart, deadlineEnd: data.deadlineEnd },
+    { deadlineStart: null, deadlineEnd: null },
   );
 
   // Note: no ancestor/descendant graph revalidation here -- a brand-new
@@ -178,11 +220,16 @@ export async function updateObjective(data: UpdateObjectiveInput) {
   validateObjectiveInput(description, isTask);
   const counterLabel = resolveCounterLabel(description, isTask);
 
-  // Deadlines are mandatory on every update too; there is no "clear the
-  // deadline" operation.
-  const { deadlineStart, deadlineEnd } = parseDeadlines(
-    data.deadlineStart,
-    data.deadlineEnd,
+  // On update, an OMITTED field inherits the existing row's current value
+  // for that field; an EXPLICIT null always clears it. The both-or-neither
+  // check (inside resolveDeadlines) runs against this RESOLVED pair, not the
+  // raw input.
+  const { deadlineStart, deadlineEnd } = resolveDeadlines(
+    { deadlineStart: data.deadlineStart, deadlineEnd: data.deadlineEnd },
+    {
+      deadlineStart: existing.deadlineStart,
+      deadlineEnd: existing.deadlineEnd,
+    },
   );
 
   // --- Deadline propagation revalidation against the EXISTING graph ---
@@ -201,8 +248,8 @@ export async function updateObjective(data: UpdateObjectiveInput) {
   // keeps a plain description-only edit cheap).
   const isTaskChanged = isTask !== existing.isTask;
   const intervalChanged =
-    deadlineStart.getTime() !== existing.deadlineStart.getTime() ||
-    deadlineEnd.getTime() !== existing.deadlineEnd.getTime();
+    !dateEquals(deadlineStart, existing.deadlineStart) ||
+    !dateEquals(deadlineEnd, existing.deadlineEnd);
 
   if (isTaskChanged || intervalChanged) {
     const updatedNode: DeadlineNode = {

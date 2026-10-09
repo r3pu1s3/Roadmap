@@ -11,13 +11,28 @@ vi.mock("../../../lib/prisma");
 const VALID_MAP_ID = 7;
 
 // --- deadline fixtures -----------------------------------------------------
-// Deadlines are now MANDATORY on every create/update call (amendment to the
-// original optional design). The service is expected to accept ISO date
-// strings on the way in (mirroring the controller's current req.body
-// pass-through for create, and its manual field-picking for update -- both
-// of which hand the service raw JSON values, not Date instances) and persist
-// parsed `Date` objects, since Prisma's DateTime columns require real Date
-// instances.
+// Deadlines are NULLABLE on every create/update call, but "omitted" and
+// "explicit null" are NOT interchangeable once an existing row is involved:
+//
+//   - On CREATE there is no existing row, so both missing (omitted) and both
+//     explicitly `null` are equivalent -- both produce a "no deadline"
+//     objective (persisted as `{ deadlineStart: null, deadlineEnd: null }`).
+//   - On UPDATE, an OMITTED field means "leave unchanged" (inherit whatever
+//     the existing row already has for that field); an EXPLICIT `null`
+//     always means "clear this field". The both-or-neither invariant is
+//     checked against the FINAL RESOLVED pair (after applying inheritance
+//     for any omitted field), not the raw input.
+//
+// Providing exactly one field (with the other resolving to null, whether by
+// omission-with-no-existing-value or explicit null) is a validation error:
+// "deadlineStart and deadlineEnd must both be set or both be null". Providing
+// both (or resolving both to non-null) goes through the existing
+// valid-date-parsing + 60-second-minimum-duration logic unchanged. The
+// service is expected to accept ISO date strings on the way in (mirroring
+// the controller's current req.body pass-through for create, and its manual
+// field-picking for update -- both of which hand the service raw JSON
+// values, not Date instances) and persist parsed `Date` objects, since
+// Prisma's DateTime columns require real Date instances (or null).
 const VALID_DEADLINE_START = "2026-01-01T00:00:00.000Z";
 const VALID_DEADLINE_END = "2026-01-10T00:00:00.000Z";
 const VALID_DEADLINES = {
@@ -112,27 +127,15 @@ describe("createObjective", () => {
     ).rejects.toThrow("isTask must be a boolean");
   });
 
-  // --- deadline validation (mandatory) ---
-  // Amendment to the original plan: deadlines are no longer optional.
-  // Missing either field, or both, or an inverted range, must all be
-  // rejected -- there is no "no deadline" create path anymore. These checks
-  // are assumed to run immediately after the description/isTask checks
-  // above, so `prisma.objective.create` must never be reached for any of
-  // them.
+  // --- deadline validation (nullable, both-or-neither) ---
+  // Deadlines are nullable: both missing/null is a valid "no deadline"
+  // state, but exactly one provided is a validation error -- a half-open
+  // deadline isn't a meaningful planning window. These checks are assumed to
+  // run immediately after the description/isTask checks above, so
+  // `prisma.objective.create` must never be reached for any of the rejecting
+  // cases.
 
-  it("throws if deadlineStart is missing", async () => {
-    await expect(
-      createObjective({
-        description: "test",
-        isTask: false,
-        mapId: VALID_MAP_ID,
-        deadlineEnd: VALID_DEADLINE_END,
-      } as any),
-    ).rejects.toThrow("deadlineStart is required");
-    expect(prisma.objective.create).not.toHaveBeenCalled();
-  });
-
-  it("throws if deadlineEnd is missing", async () => {
+  it("throws the both-or-neither error when deadlineStart is provided but deadlineEnd is omitted", async () => {
     await expect(
       createObjective({
         description: "test",
@@ -140,23 +143,104 @@ describe("createObjective", () => {
         mapId: VALID_MAP_ID,
         deadlineStart: VALID_DEADLINE_START,
       } as any),
-    ).rejects.toThrow("deadlineEnd is required");
+    ).rejects.toThrow(
+      /deadlineStart and deadlineEnd must both be set or both be null/i,
+    );
     expect(prisma.objective.create).not.toHaveBeenCalled();
   });
 
-  it("throws if both deadlineStart and deadlineEnd are omitted (previously a no-op; now a rejection)", async () => {
-    // This is the pinned behavior change from the earlier draft plan: an
-    // omitted pair used to mean "no deadline" and was accepted. Under the
-    // mandatory design it must be rejected exactly like a missing
-    // deadlineStart alone (checked first).
+  it("throws the both-or-neither error when deadlineEnd is provided but deadlineStart is omitted", async () => {
+    await expect(
+      createObjective({
+        description: "test",
+        isTask: false,
+        mapId: VALID_MAP_ID,
+        deadlineEnd: VALID_DEADLINE_END,
+      } as any),
+    ).rejects.toThrow(
+      /deadlineStart and deadlineEnd must both be set or both be null/i,
+    );
+    expect(prisma.objective.create).not.toHaveBeenCalled();
+  });
+
+  it("throws the both-or-neither error when deadlineStart is null and deadlineEnd is provided", async () => {
+    await expect(
+      createObjective({
+        description: "test",
+        isTask: false,
+        mapId: VALID_MAP_ID,
+        deadlineStart: null,
+        deadlineEnd: VALID_DEADLINE_END,
+      } as any),
+    ).rejects.toThrow(
+      /deadlineStart and deadlineEnd must both be set or both be null/i,
+    );
+    expect(prisma.objective.create).not.toHaveBeenCalled();
+  });
+
+  it("throws the both-or-neither error when deadlineEnd is null and deadlineStart is provided", async () => {
+    await expect(
+      createObjective({
+        description: "test",
+        isTask: false,
+        mapId: VALID_MAP_ID,
+        deadlineStart: VALID_DEADLINE_START,
+        deadlineEnd: null,
+      } as any),
+    ).rejects.toThrow(
+      /deadlineStart and deadlineEnd must both be set or both be null/i,
+    );
+    expect(prisma.objective.create).not.toHaveBeenCalled();
+  });
+
+  it("creates an objective with null deadlines when both are omitted", async () => {
+    prisma.objective.create.mockResolvedValue({
+      id: 1,
+      deadlineStart: null,
+      deadlineEnd: null,
+    } as any);
+
     await expect(
       createObjective({
         description: "test",
         isTask: false,
         mapId: VALID_MAP_ID,
       } as any),
-    ).rejects.toThrow("deadlineStart is required");
-    expect(prisma.objective.create).not.toHaveBeenCalled();
+    ).resolves.toBeDefined();
+
+    expect(prisma.objective.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        deadlineStart: null,
+        deadlineEnd: null,
+      }),
+      include: { counter: true },
+    });
+  });
+
+  it("creates an objective with null deadlines when both are explicitly passed as null", async () => {
+    prisma.objective.create.mockResolvedValue({
+      id: 1,
+      deadlineStart: null,
+      deadlineEnd: null,
+    } as any);
+
+    await expect(
+      createObjective({
+        description: "test",
+        isTask: false,
+        mapId: VALID_MAP_ID,
+        deadlineStart: null,
+        deadlineEnd: null,
+      } as any),
+    ).resolves.toBeDefined();
+
+    expect(prisma.objective.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        deadlineStart: null,
+        deadlineEnd: null,
+      }),
+      include: { counter: true },
+    });
   });
 
   it("throws if deadlineStart is after deadlineEnd", async () => {
@@ -425,9 +509,8 @@ describe("updateObjective", () => {
       description: "old",
       isTask: false,
       counter: null,
-      // Every Objective now always has a deadline (deadlines are
-      // universally mandatory, including at the DB level going forward);
-      // this fixture's specific values are irrelevant to the test below.
+      // Deadlines are nullable; this fixture uses real dates purely for
+      // convenience since the test below isn't exercising deadline behavior.
       deadlineStart: new Date("2025-06-01T00:00:00.000Z"),
       deadlineEnd: new Date("2025-06-02T00:00:00.000Z"),
     } as any);
@@ -443,9 +526,8 @@ describe("updateObjective", () => {
       description: "old",
       isTask: false,
       counter: null,
-      // Every Objective now always has a deadline (deadlines are
-      // universally mandatory, including at the DB level going forward);
-      // this fixture's specific values are irrelevant to the test below.
+      // Deadlines are nullable; this fixture uses real dates purely for
+      // convenience since the test below isn't exercising deadline behavior.
       deadlineStart: new Date("2025-06-01T00:00:00.000Z"),
       deadlineEnd: new Date("2025-06-02T00:00:00.000Z"),
     } as any);
@@ -461,9 +543,8 @@ describe("updateObjective", () => {
       description: "old",
       isTask: false,
       counter: null,
-      // Every Objective now always has a deadline (deadlines are
-      // universally mandatory, including at the DB level going forward);
-      // this fixture's specific values are irrelevant to the test below.
+      // Deadlines are nullable; this fixture uses real dates purely for
+      // convenience since the test below isn't exercising deadline behavior.
       deadlineStart: new Date("2025-06-01T00:00:00.000Z"),
       deadlineEnd: new Date("2025-06-02T00:00:00.000Z"),
     } as any);
@@ -484,9 +565,8 @@ describe("updateObjective", () => {
       description: "old",
       isTask: false,
       counter: null,
-      // Every Objective now always has a deadline (deadlines are
-      // universally mandatory, including at the DB level going forward);
-      // this fixture's specific values are irrelevant to the test below.
+      // Deadlines are nullable; this fixture uses real dates purely for
+      // convenience since the test below isn't exercising deadline behavior.
       deadlineStart: new Date("2025-06-01T00:00:00.000Z"),
       deadlineEnd: new Date("2025-06-02T00:00:00.000Z"),
     } as any);
@@ -523,43 +603,29 @@ describe("updateObjective", () => {
     expect(prisma.objective.update).not.toHaveBeenCalled();
   });
 
-  // --- deadline validation (mandatory) ---
+  // --- deadline validation (nullable, both-or-neither against the FINAL
+  // RESOLVED state) ---
+  // On update, an OMITTED field inherits whatever the existing row already
+  // has (undefined -> inherit), while an EXPLICIT `null` always means
+  // "clear this field" -- these are different input shapes with different
+  // meanings. The both-or-neither check runs against the resolved pair
+  // (after applying inheritance), not the raw input, so "provide one field,
+  // omit the other" only rejects when the inherited value for the omitted
+  // field doesn't match (null vs non-null) the provided one. The two tests
+  // below use an existing objective that already has NO deadline, so the
+  // omitted field resolves to null and mismatches the provided real date --
+  // see the "partial update" tests further below for the case where the
+  // existing row has real dates and omitting one field is a VALID partial
+  // update (inheriting the other).
 
-  it("throws if deadlineStart is missing", async () => {
+  it("throws the both-or-neither error when deadlineStart is provided but deadlineEnd is omitted, given the existing objective has no deadline (inherited end stays null)", async () => {
     prisma.objective.findUnique.mockResolvedValue({
       id: 1,
       description: "old",
       isTask: false,
       counter: null,
-      // Every Objective now always has a deadline (deadlines are
-      // universally mandatory, including at the DB level going forward);
-      // this fixture's specific values are irrelevant to the test below.
-      deadlineStart: new Date("2025-06-01T00:00:00.000Z"),
-      deadlineEnd: new Date("2025-06-02T00:00:00.000Z"),
-    } as any);
-
-    await expect(
-      updateObjective({
-        id: 1,
-        description: "test",
-        isTask: false,
-        deadlineEnd: VALID_DEADLINE_END,
-      } as any),
-    ).rejects.toThrow("deadlineStart is required");
-    expect(prisma.objective.update).not.toHaveBeenCalled();
-  });
-
-  it("throws if deadlineEnd is missing", async () => {
-    prisma.objective.findUnique.mockResolvedValue({
-      id: 1,
-      description: "old",
-      isTask: false,
-      counter: null,
-      // Every Objective now always has a deadline (deadlines are
-      // universally mandatory, including at the DB level going forward);
-      // this fixture's specific values are irrelevant to the test below.
-      deadlineStart: new Date("2025-06-01T00:00:00.000Z"),
-      deadlineEnd: new Date("2025-06-02T00:00:00.000Z"),
+      deadlineStart: null,
+      deadlineEnd: null,
     } as any);
 
     await expect(
@@ -569,27 +635,324 @@ describe("updateObjective", () => {
         isTask: false,
         deadlineStart: VALID_DEADLINE_START,
       } as any),
-    ).rejects.toThrow("deadlineEnd is required");
+    ).rejects.toThrow(
+      /deadlineStart and deadlineEnd must both be set or both be null/i,
+    );
     expect(prisma.objective.update).not.toHaveBeenCalled();
   });
 
-  it("throws if both deadlineStart and deadlineEnd are omitted (previously a no-op; now a rejection)", async () => {
+  it("throws the both-or-neither error when deadlineEnd is provided but deadlineStart is omitted, given the existing objective has no deadline (inherited start stays null)", async () => {
     prisma.objective.findUnique.mockResolvedValue({
       id: 1,
       description: "old",
       isTask: false,
       counter: null,
-      // Every Objective now always has a deadline (deadlines are
-      // universally mandatory, including at the DB level going forward);
-      // this fixture's specific values are irrelevant to the test below.
-      deadlineStart: new Date("2025-06-01T00:00:00.000Z"),
-      deadlineEnd: new Date("2025-06-02T00:00:00.000Z"),
+      deadlineStart: null,
+      deadlineEnd: null,
     } as any);
 
     await expect(
-      updateObjective({ id: 1, description: "test", isTask: false } as any),
-    ).rejects.toThrow("deadlineStart is required");
+      updateObjective({
+        id: 1,
+        description: "test",
+        isTask: false,
+        deadlineEnd: VALID_DEADLINE_END,
+      } as any),
+    ).rejects.toThrow(
+      /deadlineStart and deadlineEnd must both be set or both be null/i,
+    );
     expect(prisma.objective.update).not.toHaveBeenCalled();
+  });
+
+  it("clears an objective's deadlines to null on update when both fields are explicitly sent as null (distinct from omitting them)", async () => {
+    prisma.objective.findUnique.mockResolvedValue({
+      id: 1,
+      description: "old",
+      isTask: false,
+      counter: null,
+      deadlineStart: new Date("2025-06-01T00:00:00.000Z"),
+      deadlineEnd: new Date("2025-06-02T00:00:00.000Z"),
+    } as any);
+    prisma.objective.update.mockResolvedValue({
+      id: 1,
+      deadlineStart: null,
+      deadlineEnd: null,
+    } as any);
+
+    await updateObjective({
+      id: 1,
+      description: "new description",
+      isTask: false,
+      deadlineStart: null,
+      deadlineEnd: null,
+    } as any);
+
+    expect(prisma.objective.update).toHaveBeenCalledWith({
+      where: { id: 1 },
+      data: {
+        description: "new description",
+        isTask: false,
+        deadlineStart: null,
+        deadlineEnd: null,
+        counter: undefined,
+      },
+      include: { counter: true },
+    });
+  });
+
+  it("preserves the existing deadlines unchanged when both deadlineStart and deadlineEnd are omitted on update (omission means inherit, not clear)", async () => {
+    const existingStart = new Date("2025-06-01T00:00:00.000Z");
+    const existingEnd = new Date("2025-06-02T00:00:00.000Z");
+    prisma.objective.findUnique.mockResolvedValue({
+      id: 1,
+      description: "old",
+      isTask: false,
+      counter: null,
+      deadlineStart: existingStart,
+      deadlineEnd: existingEnd,
+    } as any);
+    prisma.objective.update.mockResolvedValue({ id: 1 } as any);
+
+    await updateObjective({
+      id: 1,
+      description: "new description",
+      isTask: false,
+    } as any);
+
+    expect(prisma.objective.update).toHaveBeenCalledWith({
+      where: { id: 1 },
+      data: {
+        description: "new description",
+        isTask: false,
+        deadlineStart: existingStart,
+        deadlineEnd: existingEnd,
+        counter: undefined,
+      },
+      include: { counter: true },
+    });
+  });
+
+  it("applies a partial update that provides a new deadlineStart and omits deadlineEnd, inheriting the existing deadlineEnd when the resulting pairing is still valid", async () => {
+    const existingEnd = new Date("2026-06-01T00:00:00.000Z");
+    prisma.objective.findUnique.mockResolvedValue({
+      id: 1,
+      description: "old",
+      isTask: false,
+      counter: null,
+      deadlineStart: new Date("2026-01-01T00:00:00.000Z"),
+      deadlineEnd: existingEnd,
+    } as any);
+    prisma.objective.update.mockResolvedValue({ id: 1 } as any);
+    const newStart = "2026-05-01T00:00:00.000Z"; // still >=60s before the inherited existingEnd
+
+    await updateObjective({
+      id: 1,
+      description: "new description",
+      isTask: false,
+      deadlineStart: newStart,
+    } as any);
+
+    expect(prisma.objective.update).toHaveBeenCalledWith({
+      where: { id: 1 },
+      data: {
+        description: "new description",
+        isTask: false,
+        deadlineStart: new Date(newStart),
+        deadlineEnd: existingEnd,
+        counter: undefined,
+      },
+      include: { counter: true },
+    });
+  });
+
+  it("treats omitted deadlineStart/deadlineEnd as unchanged when the existing objective already has no deadline, and skips the ancestor/descendant graph walk", async () => {
+    prisma.objective.findUnique.mockResolvedValue({
+      id: 1,
+      description: "old",
+      isTask: false,
+      counter: null,
+      deadlineStart: null,
+      deadlineEnd: null,
+    } as any);
+    prisma.objective.update.mockResolvedValue({ id: 1 } as any);
+
+    await updateObjective({
+      id: 1,
+      description: "new description",
+      isTask: false,
+      // deadlineStart/deadlineEnd deliberately OMITTED (not sent as null) --
+      // inherits the existing null/null, so the resolved interval is
+      // unchanged.
+    } as any);
+
+    expect(prisma.objectiveEdge.findMany).not.toHaveBeenCalled();
+  });
+
+  it("treats explicit null deadlineStart/deadlineEnd as unchanged when the existing objective already has no deadline, and skips the ancestor/descendant graph walk", async () => {
+    prisma.objective.findUnique.mockResolvedValue({
+      id: 1,
+      description: "old",
+      isTask: false,
+      counter: null,
+      deadlineStart: null,
+      deadlineEnd: null,
+    } as any);
+    prisma.objective.update.mockResolvedValue({ id: 1 } as any);
+
+    await updateObjective({
+      id: 1,
+      description: "new description",
+      isTask: false,
+      // deadlineStart/deadlineEnd deliberately sent as EXPLICIT null (not
+      // omitted) -- resolves to null/null either way here since the
+      // existing row was already null/null, so the interval is still
+      // unchanged, just via a different input shape than the test above.
+      deadlineStart: null,
+      deadlineEnd: null,
+    } as any);
+
+    expect(prisma.objectiveEdge.findMany).not.toHaveBeenCalled();
+  });
+
+  it("treats null->date as changed and runs the graph walk, passing when the new deadline satisfies the ancestor", async () => {
+    prisma.objective.findUnique.mockResolvedValue({
+      id: 1,
+      description: "old",
+      isTask: true,
+      counter: null,
+      deadlineStart: null,
+      deadlineEnd: null,
+    } as any);
+    // The vacuous-pass skip only applies when a side has NO deadline AFTER
+    // the update is resolved -- not because the node had none BEFORE the
+    // update. Once this update sets a real deadline, the sequencing rule is
+    // actually checked against it, same as if the node always had one. This
+    // ancestor's deadlineEnd (2026-02-01) is before the new task's
+    // deadlineStart (2026-02-05), so the rule is genuinely satisfied, not
+    // skipped.
+    prisma.objectiveEdge.findMany.mockImplementation(async ({ where }: any) => {
+      if (where?.parentId?.in?.includes(1)) {
+        return [{ childId: 2 }] as any;
+      }
+      return [] as any;
+    });
+    prisma.objective.findMany.mockResolvedValue([
+      {
+        id: 2,
+        description: "ancestor",
+        isTask: false,
+        deadlineStart: new Date("2020-01-01T00:00:00.000Z"),
+        deadlineEnd: new Date("2026-02-01T00:00:00.000Z"),
+      },
+    ] as any);
+    prisma.objective.update.mockResolvedValue({ id: 1 } as any);
+
+    await expect(
+      updateObjective({
+        id: 1,
+        description: "new description",
+        isTask: true,
+        deadlineStart: "2026-02-05T00:00:00.000Z",
+        deadlineEnd: "2026-02-20T00:00:00.000Z",
+      } as any),
+    ).resolves.toBeDefined();
+
+    expect(prisma.objectiveEdge.findMany).toHaveBeenCalled();
+  });
+
+  it("rejects null->date when the new real deadline genuinely conflicts with a real ancestor deadline (validation re-arms once a real deadline is set)", async () => {
+    prisma.objective.findUnique.mockResolvedValue({
+      id: 1,
+      description: "old",
+      isTask: true,
+      counter: null,
+      deadlineStart: null,
+      deadlineEnd: null,
+    } as any);
+    prisma.objectiveEdge.findMany.mockImplementation(async ({ where }: any) => {
+      if (where?.parentId?.in?.includes(1)) {
+        return [{ childId: 2 }] as any;
+      }
+      return [] as any;
+    });
+    prisma.objective.findMany.mockResolvedValue([
+      {
+        id: 2,
+        description: "ancestor",
+        isTask: false,
+        deadlineStart: new Date("2026-02-01T00:00:00.000Z"),
+        deadlineEnd: new Date("2026-02-10T00:00:00.000Z"),
+      },
+    ] as any);
+
+    await expect(
+      updateObjective({
+        id: 1,
+        description: "new description",
+        isTask: true,
+        deadlineStart: "2026-02-05T00:00:00.000Z", // before ancestor's end
+        deadlineEnd: "2026-02-20T00:00:00.000Z",
+      } as any),
+    ).rejects.toThrow();
+
+    expect(prisma.objective.update).not.toHaveBeenCalled();
+  });
+
+  it("treats date->null as changed, runs the graph walk, and passes vacuously regardless of the ancestor's own deadlines", async () => {
+    prisma.objective.findUnique.mockResolvedValue({
+      id: 1,
+      description: "old",
+      isTask: true,
+      counter: null,
+      deadlineStart: new Date("2025-01-01T00:00:00.000Z"),
+      deadlineEnd: new Date("2025-01-02T00:00:00.000Z"),
+    } as any);
+    // Ancestor deliberately violates the OLD rule (ends after the old
+    // deadlineStart would require) -- clearing to null must not be blocked
+    // by this stale neighbor state.
+    prisma.objectiveEdge.findMany.mockImplementation(async ({ where }: any) => {
+      if (where?.parentId?.in?.includes(1)) {
+        return [{ childId: 2 }] as any;
+      }
+      return [] as any;
+    });
+    prisma.objective.findMany.mockResolvedValue([
+      {
+        id: 2,
+        description: "ancestor",
+        isTask: false,
+        deadlineStart: new Date("2024-12-01T00:00:00.000Z"),
+        deadlineEnd: new Date("2025-06-01T00:00:00.000Z"), // after old deadlineStart
+      },
+    ] as any);
+    prisma.objective.update.mockResolvedValue({
+      id: 1,
+      deadlineStart: null,
+      deadlineEnd: null,
+    } as any);
+
+    await expect(
+      updateObjective({
+        id: 1,
+        description: "new description",
+        isTask: true,
+        // EXPLICIT null on both -- omitting them here would instead INHERIT
+        // the existing real deadlines (no change), which would skip the
+        // graph walk entirely and defeat the point of this test.
+        deadlineStart: null,
+        deadlineEnd: null,
+      } as any),
+    ).resolves.toBeDefined();
+
+    expect(prisma.objectiveEdge.findMany).toHaveBeenCalled();
+    expect(prisma.objective.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          deadlineStart: null,
+          deadlineEnd: null,
+        }),
+      }),
+    );
   });
 
   it("throws if deadlineStart is after deadlineEnd", async () => {
@@ -598,9 +961,8 @@ describe("updateObjective", () => {
       description: "old",
       isTask: false,
       counter: null,
-      // Every Objective now always has a deadline (deadlines are
-      // universally mandatory, including at the DB level going forward);
-      // this fixture's specific values are irrelevant to the test below.
+      // Deadlines are nullable; this fixture uses real dates purely for
+      // convenience since the test below isn't exercising deadline behavior.
       deadlineStart: new Date("2025-06-01T00:00:00.000Z"),
       deadlineEnd: new Date("2025-06-02T00:00:00.000Z"),
     } as any);
@@ -624,9 +986,8 @@ describe("updateObjective", () => {
       description: "old",
       isTask: false,
       counter: null,
-      // Every Objective now always has a deadline (deadlines are
-      // universally mandatory, including at the DB level going forward);
-      // this fixture's specific values are irrelevant to the test below.
+      // Deadlines are nullable; this fixture uses real dates purely for
+      // convenience since the test below isn't exercising deadline behavior.
       deadlineStart: new Date("2025-06-01T00:00:00.000Z"),
       deadlineEnd: new Date("2025-06-02T00:00:00.000Z"),
     } as any);
@@ -649,9 +1010,8 @@ describe("updateObjective", () => {
       description: "old",
       isTask: false,
       counter: null,
-      // Every Objective now always has a deadline (deadlines are
-      // universally mandatory, including at the DB level going forward);
-      // this fixture's specific values are irrelevant to the test below.
+      // Deadlines are nullable; this fixture uses real dates purely for
+      // convenience since the test below isn't exercising deadline behavior.
       deadlineStart: new Date("2025-06-01T00:00:00.000Z"),
       deadlineEnd: new Date("2025-06-02T00:00:00.000Z"),
     } as any);
@@ -674,9 +1034,8 @@ describe("updateObjective", () => {
       description: "old",
       isTask: false,
       counter: null,
-      // Every Objective now always has a deadline (deadlines are
-      // universally mandatory, including at the DB level going forward);
-      // this fixture's specific values are irrelevant to the test below.
+      // Deadlines are nullable; this fixture uses real dates purely for
+      // convenience since the test below isn't exercising deadline behavior.
       deadlineStart: new Date("2025-06-01T00:00:00.000Z"),
       deadlineEnd: new Date("2025-06-02T00:00:00.000Z"),
     } as any);
@@ -1050,9 +1409,8 @@ describe("updateObjective", () => {
       description: "old",
       isTask: false,
       counter: null,
-      // Every Objective now always has a deadline (deadlines are
-      // universally mandatory, including at the DB level going forward);
-      // this fixture's specific values are irrelevant to the test below.
+      // Deadlines are nullable; this fixture uses real dates purely for
+      // convenience since the test below isn't exercising deadline behavior.
       deadlineStart: new Date("2025-06-01T00:00:00.000Z"),
       deadlineEnd: new Date("2025-06-02T00:00:00.000Z"),
     } as any);

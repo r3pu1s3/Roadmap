@@ -23,15 +23,13 @@ const PARENT_ID = 1;
 const CHILD_ID = 2;
 const MAP_ID = 10;
 
-// Deadlines are mandatory on every Objective, including at the DB level
-// going forward (a follow-up migration makes the columns NOT NULL once
-// legacy rows are cleaned up), so even fixtures for tests that aren't
-// concerned with deadline rules must carry real dates. These two objectives
-// share an identical, wide default interval and default to isTask: false,
-// which trivially satisfies both the sequencing and umbrella rules against
-// each other (equal intervals; boundary-touching is inclusive) -- so
-// cross-map / duplicate-edge / cycle-detection tests can stay entirely
-// unconcerned with deadlines.
+// Objective deadlines are nullable, but these fixtures still default to real
+// dates purely for readability. These two objectives share an identical,
+// wide default interval and default to isTask: false, which trivially
+// satisfies both the sequencing and umbrella rules against each other (equal
+// intervals; boundary-touching is inclusive) -- so cross-map /
+// duplicate-edge / cycle-detection tests can stay entirely unconcerned with
+// deadline rules.
 const DEFAULT_DEADLINE_START = new Date("2026-01-01T00:00:00.000Z");
 const DEFAULT_DEADLINE_END = new Date("2026-12-31T00:00:00.000Z");
 
@@ -53,8 +51,8 @@ function projectObjective(id: number, mapId = MAP_ID) {
 function deadlineObjective(
   id: number,
   isTask: boolean,
-  deadlineStart: Date,
-  deadlineEnd: Date,
+  deadlineStart: Date | null,
+  deadlineEnd: Date | null,
   mapId = MAP_ID,
 ) {
   return {
@@ -284,10 +282,10 @@ describe("createObjectiveEdge", () => {
     // is not the proposed childId P, so it keeps walking; level 2 finds
     // nothing further upstream of R, so the frontier empties out and the
     // BFS correctly concludes there is no cycle.
-    // Deadlines are now mandatory, so this edge reaching creation also
-    // triggers deadline-propagation's own ancestor/descendant graph walk
-    // (unrelated to cycle-detection) -- any calls beyond the two levels
-    // below fall back to this persistent empty result.
+    // This edge reaching creation also triggers deadline-propagation's own
+    // ancestor/descendant graph walk (unrelated to cycle-detection) -- any
+    // calls beyond the two levels below fall back to this persistent empty
+    // result.
     prisma.objectiveEdge.findMany
       .mockResolvedValueOnce([{ parentId: R }])
       .mockResolvedValueOnce([])
@@ -393,6 +391,31 @@ describe("createObjectiveEdge", () => {
     ).rejects.toThrow();
 
     expect(prisma.objectiveEdge.create).not.toHaveBeenCalled();
+  });
+
+  it("creates the edge when one side has no deadline, even though the pair would otherwise violate the sequencing rule (null guard passes vacuously through the full createObjectiveEdge flow, including cycle-detection)", async () => {
+    // Same otherwise-violating shape as the rejecting sequencing test above
+    // (parent is a task starting D5, child doesn't end until D6, after the
+    // parent starts) but with the parent having no deadline at all (both
+    // fields null -- a node's deadline is always both-or-neither, so a
+    // lopsided single-field-null fixture isn't a reachable state), so the
+    // pair must now resolve.
+    mockParentAndChild(
+      deadlineObjective(PARENT_ID, true, null, null),
+      deadlineObjective(CHILD_ID, false, D1, D6),
+    );
+    prisma.objectiveEdge.findUnique.mockResolvedValue(null);
+    mockNoExtraEdges();
+    const created = { id: 6, parentId: PARENT_ID, childId: CHILD_ID };
+    prisma.objectiveEdge.create.mockResolvedValue(created as any);
+
+    await expect(
+      createObjectiveEdge({ parentId: PARENT_ID, childId: CHILD_ID }),
+    ).resolves.toStrictEqual(created);
+
+    expect(prisma.objectiveEdge.create).toHaveBeenCalledWith({
+      data: { parentId: PARENT_ID, childId: CHILD_ID },
+    });
   });
 });
 

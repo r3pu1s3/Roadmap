@@ -10,10 +10,11 @@ type ObjectiveProps = {
   data?: {
     id?: number;
     isTask?: boolean | null;
-    // Optional/defensive: the real API always includes this now, but stale
-    // in-memory node data (e.g. from before a save round-trip) may lack it,
-    // and the badge below must simply not render rather than crash.
-    deadlineEnd?: string;
+    // Deadlines are nullable: the API returns null for objectives with no
+    // deadline, and stale in-memory node data (e.g. from before a save
+    // round-trip) may omit it entirely. Any falsy value (null/undefined)
+    // simply means no badge is rendered.
+    deadlineEnd?: string | null;
   };
 };
 
