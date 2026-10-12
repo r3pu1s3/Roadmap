@@ -1,2 +1,5 @@
 node_modules
 .husky/_
+
+.claude/settings.local.json
+.claude/worktrees/

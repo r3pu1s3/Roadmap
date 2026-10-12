@@ -9,7 +9,7 @@ You write **backend unit tests** for one slice of an already user-approved featu
 
 This repo has two established unit-test shapes side by side — use whichever (or both) apply to your assigned slice:
 - **Service unit tests**: `vi.mock("../lib/prisma")` (the deep mock in `backend/src/lib/__mocks__/prisma.ts`), testing business rules/validation directly against the service functions described in the plan.
-- **Controller unit tests**: mock the service module directly, then call the controller's exported handler with fake `req`/`res`/`next` objects, asserting the correct status code / response body for each error path — no HTTP layer, no supertest, no real DB.
+- **Controller unit tests**: mock the service module directly, then call the controller's exported handler with fake `req`/`res`/`next` objects, asserting the correct status code / response body for each error path — no HTTP layer, no real DB.
 
 ## Where tests live
 

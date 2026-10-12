@@ -31,7 +31,7 @@ Under the checkpoint policy below, a clean run of this agent is *not* shown to t
 
 ## Out of scope — do not touch
 
-- `backend/prisma/schema.prisma` or migrations (owned by `backend-schema-builder`), any `*.test.ts`/`*.e2e.test.ts` file, controllers, routes, or `backend/src/index.ts` wiring.
+- `backend/prisma/schema.prisma` or migrations (owned by `backend-schema-builder`), any `*.test.ts` file, controllers, routes, or `backend/src/index.ts` wiring.
 - Never `git add`/`commit`/`push`.
 
 ## When you're done

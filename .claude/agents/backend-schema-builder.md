@@ -47,5 +47,5 @@ Stop. Return a report containing:
 - Confirmation `prisma generate` succeeded and `npm run build` passed.
 
 **Whether this needs a user checkpoint depends on the outcome:**
-- Clean additive/safe change, migration applied, build passing: this does **not** need to go in front of the user. The orchestrating session should just note it completed and move straight on to `backend-unit-test-writer`/`backend-e2e-test-writer` — no pause for review.
+- Clean additive/safe change, migration applied, build passing: this does **not** need to go in front of the user. The orchestrating session should just note it completed and move straight on to `backend-unit-test-writer` — no pause for review.
 - A potentially-destructive change you held off running, or a build failure you couldn't resolve: this **does** need the user's eyes — it's exactly the kind of ambiguity/issue they want surfaced, so the orchestrating session should stop and present it before doing anything else.
