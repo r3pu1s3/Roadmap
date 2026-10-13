@@ -118,9 +118,12 @@ checkpointed for explicit user approval before implementation begins. Approval o
 checkpoint covers only the step presented — it is never blanket license to proceed through
 later checkpoints unattended.
 
-Once a plan is approved, unit test files (`*.test.ts` / `*.test.tsx`) for the affected layer(s)
-MUST be written and sent back to the user for review before the corresponding implementation
-(service, controller, component) is built against them.
+Once a plan is approved, unit test files (`*.test.ts` / `*.test.tsx`) MUST be written and sent
+back to the user for review before the corresponding implementation (service, controller,
+component, page) is built against them. Tests are reviewed at the granularity the Development
+Workflow sets: one review per user story's backend tests, and one review per frontend unit.
+Implementation of the covered code MUST NOT begin until the user explicitly approves that
+specific review.
 
 Rationale: unit tests are the actual behavioral contract the implementation gets built against,
 so reviewing them before implementation catches a misunderstood requirement while it is still
@@ -141,31 +144,51 @@ client-side cycle check before creating an edge, mirroring the backend check in
 
 ## Development Workflow
 
-Every approved plan is built sequentially: the backend portion is finished first, then the
-frontend portion. Backend and frontend work MUST NOT run in parallel.
+Every approved plan is built using Spec Kit's default task organisation: by user story, in
+the priority order given in the spec (P1, then P2, and so on). Each story is built as a full
+vertical slice before the next story starts.
 
-Backend, in this fixed order:
+- **Setup and Foundational phases** contain only prerequisites that more than one story
+  genuinely shares, for example a schema change several stories depend on, or a shared
+  frontend utility. Work that only one story needs belongs in that story's phase.
+- **Within a story's phase**, the layers it touches are built in this fixed order:
+  1. Schema change and migration (Principle III), where the story needs one and Foundational
+     has not already made it.
+  2. Backend unit tests for that story's service and controller behaviour, which MUST be
+     approved by the user (Principle VII).
+  3. Backend implementation against the approved tests: service, then controller.
+  4. Route + `index.ts` wiring for that story's endpoints.
+  5. The `src/apis/*.ts` wrapper and response-type changes that story needs, matching the
+     shapes its finished backend slice actually returns.
+  6. Each component or page that story needs, built as a unit-test/implementation pair. Its
+     unit tests MUST be approved by the user (Principle VII) before it is implemented against
+     them. The next pair starts only after the current unit is green.
+- A story's backend layers MUST be green before that story's frontend work starts, so the API
+  wrappers are always written against endpoints that already exist. Later stories MAY extend
+  files that earlier stories created (for example, adding an endpoint to an existing service).
+- Each completed story MUST leave every unit test green, both its own and every earlier
+  story's, before the next story starts.
 
-1. Schema change and migration (Principle III), where the plan calls for one.
-2. Backend unit tests, checkpointed for user approval per Principle VII.
-3. Backend implementation against the approved unit tests: service, then controller.
-4. Route + `index.ts` wiring.
+Each feature is built on its own branch:
 
-Frontend, once the backend portion is green:
+- At the start of implementation, before the first task changes any file, a new branch MUST
+  be created and checked out. Spec, plan and tasks generation do not create one.
+- The branch is named after the feature's spec directory (e.g. `001-habit-blocks`).
+- It is branched off the base branch the feature's `plan.md` names. If the plan names none,
+  it is branched off whichever branch is checked out when implementation starts. The base
+  branch used MUST be stated to the user when the branch is created.
+- If a branch with that name already exists, implementation MUST stop and ask the user
+  whether to reuse it or pick another name. It MUST NOT silently reuse or overwrite it.
 
-1. Where the feature needs them, all `src/apis/*.ts` wrapper and response-type changes are made
-   together as one grouped step, matching the shapes the finished backend actually returns.
-2. Each component or page is then built as a unit-test/implementation pair: its unit tests are
-   written and MUST be approved by the user (Principle VII) before that unit is implemented
-   against them. The next pair starts only after the current unit is green.
+The feature is committed on that branch only after the user has verified the finished feature
+by hand in the running app (both dev servers up). Commits are not created speculatively
+mid-pipeline.
 
-Each feature is built on its own branch and committed only after the user has verified the
-finished feature by hand in the running app (both dev servers up) — commits are not created
-speculatively mid-pipeline.
-
-Rationale: building the backend first means the frontend API wrappers are written against
-responses that already exist, rather than against a contract that may still shift. Grouping the API wrapper changes before any component work gives every frontend unit
-test a stable, already-settled set of types to mock.
+Rationale: building one story end to end at a time gives a working, demonstrable increment
+after every story, and keeps each test review small and tied to one piece of user-visible
+behaviour. Building a story's backend before its frontend keeps the benefit the old
+backend-first order was meant to protect: wrappers are never written against a contract that
+might still change.
 
 ## Governance
 
@@ -181,4 +204,4 @@ materially expanded guidance, PATCH for wording/clarification only. Because this
 solo-maintained project, compliance review happens as self-review against this document before
 a feature is committed, rather than through a separate approver.
 
-**Version**: 3.0.1 | **Ratified**: 2026-10-09 | **Last Amended**: 2026-10-10
+**Version**: 4.1.0 | **Ratified**: 2026-10-09 | **Last Amended**: 2026-10-13
