@@ -2,6 +2,7 @@ import express from "express";
 import objectiveRoutes from "./routes/ObjectiveRoute";
 import objectiveEdgeRoutes from "./routes/ObjectiveEdgeRoute";
 import mapRoutes from "./routes/MapRoute";
+import habitRoutes from "./routes/HabitRoute";
 import cors from "cors";
 
 const app = express();
@@ -14,6 +15,7 @@ app.use(objectiveRoutes);
 // doesn't matter — no collision.
 app.use(objectiveEdgeRoutes);
 app.use(mapRoutes);
+app.use(habitRoutes);
 const PORT = process.env.PORT ?? 3000;
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);

@@ -1,0 +1,60 @@
+.habit-list-page {
+  width: 100vw;
+  min-height: 100vh;
+  background: #0a0a0a;
+  font-family: system-ui, sans-serif;
+  color: #e5e5e5;
+  padding: 40px 24px;
+  box-sizing: border-box;
+}
+
+.habit-list-header {
+  max-width: 560px;
+  margin: 0 auto 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.habit-list-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: #f5f5f5;
+  margin: 0;
+}
+
+.habit-list-new-btn {
+  background: #6366f1;
+  color: white;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 14px;
+  border-radius: 6px;
+}
+
+.habit-list-new-btn:hover {
+  background: #4f46e5;
+}
+
+.habit-list-status,
+.habit-list-error {
+  max-width: 560px;
+  margin: 0 auto;
+  font-size: 13px;
+  color: #a3a3a3;
+  text-align: center;
+  padding: 24px 0;
+}
+
+.habit-list-error {
+  color: #f87171;
+}
+
+.habit-list-items {
+  max-width: 560px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
