@@ -111,23 +111,34 @@ config and a stray nested git worktree were caught and gitignored ad hoc in this
 history. Writing it into the constitution turns a one-off catch into a standing check applied
 the same way every time, instead of depending on it being noticed again by chance.
 
-### VII. Plan and Unit-Test Checkpoints Before Implementation (NON-NEGOTIABLE)
+### VII. Plan Approval, Story Checkpoints, and a Final Check (NON-NEGOTIABLE)
 
 Non-trivial features MUST be planned before any code is written, and the plan MUST be
-checkpointed for explicit user approval before implementation begins. Approval of one
-checkpoint covers only the step presented — it is never blanket license to proceed through
-later checkpoints unattended.
+approved by the user before implementation begins.
 
-Once a plan is approved, unit test files (`*.test.ts` / `*.test.tsx`) MUST be written and sent
-back to the user for review before the corresponding implementation (service, controller,
-component, page) is built against them. Tests are reviewed at the granularity the Development
-Workflow sets: one review per user story's backend tests, and one review per frontend unit.
-Implementation of the covered code MUST NOT begin until the user explicitly approves that
-specific review.
+Within a user story, implementation runs without stopping for user review: unit tests are
+still written before the code they cover (Principle II), but they are not sent to the user
+for approval.
 
-Rationale: unit tests are the actual behavioral contract the implementation gets built against,
-so reviewing them before implementation catches a misunderstood requirement while it is still
-cheap to fix.
+When a user story is finished (its tasks done and every unit test green), implementation MUST
+stop and send the user a summary of that story:
+
+- what was built and which files changed;
+- which tasks are done and what remains, as a progress report against `tasks.md`;
+- the test, build and lint results;
+- any deviation from the plan, surprise, or open question.
+
+The next story MUST NOT start until the user explicitly approves that checkpoint. Approval of
+one checkpoint covers only that story; it is never blanket license to run through later ones.
+No other checkpoints are added during implementation.
+
+After the last story and the polish work, the user verifies the finished feature by hand in
+the running app (see Development Workflow) before it is committed. Problems found there are
+fixed and the check repeated.
+
+Rationale: per-unit test reviews were replaced by one review per finished story. The user
+still sees and approves each working increment before more is built on it, without
+implementation being interrupted at every unit.
 
 ## Backend & Frontend Conventions
 
@@ -154,39 +165,29 @@ vertical slice before the next story starts.
 - **Within a story's phase**, the layers it touches are built in this fixed order:
   1. Schema change and migration (Principle III), where the story needs one and Foundational
      has not already made it.
-  2. Backend unit tests for that story's service and controller behaviour, which MUST be
-     approved by the user (Principle VII).
-  3. Backend implementation against the approved tests: service, then controller.
+  2. Backend unit tests for that story's service and controller behaviour.
+  3. Backend implementation against those tests: service, then controller.
   4. Route + `index.ts` wiring for that story's endpoints.
   5. The `src/apis/*.ts` wrapper and response-type changes that story needs, matching the
      shapes its finished backend slice actually returns.
-  6. Each component or page that story needs, built as a unit-test/implementation pair. Its
-     unit tests MUST be approved by the user (Principle VII) before it is implemented against
-     them. The next pair starts only after the current unit is green.
+  6. Each component or page that story needs, built as a unit-test/implementation pair. The
+     next pair starts only after the current unit is green.
 - A story's backend layers MUST be green before that story's frontend work starts, so the API
   wrappers are always written against endpoints that already exist. Later stories MAY extend
   files that earlier stories created (for example, adding an endpoint to an existing service).
 - Each completed story MUST leave every unit test green, both its own and every earlier
-  story's, before the next story starts.
+  story's, and then pass its story checkpoint (Principle VII) before the next story starts.
 
-Each feature is built on its own branch:
+Branch management is the user's responsibility. Plans and task lists MUST NOT include steps to
+create, switch, name or choose a base for git branches, and no pipeline step (spec, plan,
+tasks, implementation) may create or switch a branch unless the user asks for it at that
+moment. Work is done on whichever branch is checked out.
 
-- At the start of implementation, before the first task changes any file, a new branch MUST
-  be created and checked out. Spec, plan and tasks generation do not create one.
-- The branch is named after the feature's spec directory (e.g. `001-habit-blocks`).
-- It is branched off the base branch the feature's `plan.md` names. If the plan names none,
-  it is branched off whichever branch is checked out when implementation starts. The base
-  branch used MUST be stated to the user when the branch is created.
-- If a branch with that name already exists, implementation MUST stop and ask the user
-  whether to reuse it or pick another name. It MUST NOT silently reuse or overwrite it.
-
-The feature is committed on that branch only after the user has verified the finished feature
-by hand in the running app (both dev servers up). Commits are not created speculatively
-mid-pipeline.
+The feature is committed only after the user has verified the finished feature by hand in the
+running app (both dev servers up). Commits are not created speculatively mid-pipeline.
 
 Rationale: building one story end to end at a time gives a working, demonstrable increment
-after every story, and keeps each test review small and tied to one piece of user-visible
-behaviour. Building a story's backend before its frontend keeps the benefit the old
+after every story. Building a story's backend before its frontend keeps the benefit the old
 backend-first order was meant to protect: wrappers are never written against a contract that
 might still change.
 
@@ -204,4 +205,4 @@ materially expanded guidance, PATCH for wording/clarification only. Because this
 solo-maintained project, compliance review happens as self-review against this document before
 a feature is committed, rather than through a separate approver.
 
-**Version**: 4.1.0 | **Ratified**: 2026-10-09 | **Last Amended**: 2026-10-13
+**Version**: 5.1.0 | **Ratified**: 2026-10-09 | **Last Amended**: 2026-10-19
