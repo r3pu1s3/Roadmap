@@ -54,6 +54,39 @@ describe("getHabits controller", () => {
     expect(res.json).toHaveBeenCalledWith(fakeHabits);
   });
 
+  it("returns each habit's period unchanged", async () => {
+    const fakeHabits = [
+      {
+        id: 1,
+        name: "Nap",
+        description: null,
+        durationMinutes: 20,
+        period: null,
+      },
+      {
+        id: 2,
+        name: "Run",
+        description: null,
+        durationMinutes: 30,
+        period: "daily",
+      },
+      {
+        id: 3,
+        name: "Read",
+        description: null,
+        durationMinutes: 45,
+        period: 12,
+      },
+    ];
+    vi.mocked(habitService.getHabits).mockResolvedValue(fakeHabits as any);
+
+    const res = mockResponse();
+    await getHabits(mockRequest({}), res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(fakeHabits);
+  });
+
   it("returns 400 with the message when the service throws an Error", async () => {
     vi.mocked(habitService.getHabits).mockRejectedValue(
       new Error("something went wrong"),
@@ -99,7 +132,7 @@ describe("createHabit controller", () => {
     expect(res.json).toHaveBeenCalledWith(fakeHabit);
   });
 
-  it("forwards only name, description and durationMinutes from the body", async () => {
+  it("forwards only name, description, durationMinutes and period from the body", async () => {
     vi.mocked(habitService.createHabit).mockResolvedValue({} as any);
 
     await createHabit(
@@ -107,16 +140,56 @@ describe("createHabit controller", () => {
         name: "Run",
         description: "Easy pace",
         durationMinutes: 30,
+        period: "weekly",
         id: 99,
         extra: "ignored",
       }),
       mockResponse(),
     );
 
-    expect(habitService.createHabit).toHaveBeenCalledWith({
+    // Check the exact keys: toHaveBeenCalledWith alone ignores extra keys
+    // whose value is undefined.
+    const [input] = vi.mocked(habitService.createHabit).mock.calls[0];
+    expect(Object.keys(input).sort()).toEqual([
+      "description",
+      "durationMinutes",
+      "name",
+      "period",
+    ]);
+    expect(input).toEqual({
       name: "Run",
       description: "Easy pace",
       durationMinutes: 30,
+      period: "weekly",
+    });
+  });
+
+  it("passes period as undefined when the body has none", async () => {
+    vi.mocked(habitService.createHabit).mockResolvedValue({} as any);
+
+    await createHabit(
+      mockRequest({ name: "Run", durationMinutes: 30 }),
+      mockResponse(),
+    );
+
+    const [input] = vi.mocked(habitService.createHabit).mock.calls[0];
+    expect(input).toHaveProperty("period", undefined);
+  });
+
+  it("returns 400 with the message for a period Error", async () => {
+    vi.mocked(habitService.createHabit).mockRejectedValue(
+      new Error("period must be at least 1 hour"),
+    );
+
+    const res = mockResponse();
+    await createHabit(
+      mockRequest({ name: "Run", durationMinutes: 30, period: 0 }),
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({
+      error: "period must be at least 1 hour",
     });
   });
 
@@ -259,6 +332,58 @@ describe("updateHabit controller", () => {
     const forwarded = vi.mocked(habitService.updateHabit).mock.calls[0][0];
     expect(forwarded).toEqual({ id: 7, durationMinutes: 20 });
     expect(Object.keys(forwarded).sort()).toEqual(["durationMinutes", "id"]);
+  });
+
+  it("forwards period when it is in the body", async () => {
+    vi.mocked(habitService.updateHabit).mockResolvedValue({} as any);
+
+    await updateHabit(
+      mockRequest({ period: "monthly" }, { id: "7" }),
+      mockResponse(),
+    );
+
+    expect(habitService.updateHabit).toHaveBeenCalledWith({
+      id: 7,
+      period: "monthly",
+    });
+  });
+
+  it("forwards period: null (clear it) as a present key", async () => {
+    vi.mocked(habitService.updateHabit).mockResolvedValue({} as any);
+
+    await updateHabit(
+      mockRequest({ period: null }, { id: "7" }),
+      mockResponse(),
+    );
+
+    const forwarded = vi.mocked(habitService.updateHabit).mock.calls[0][0];
+    expect(forwarded).toHaveProperty("period", null);
+  });
+
+  it("does not forward a period key when the body has none", async () => {
+    vi.mocked(habitService.updateHabit).mockResolvedValue({} as any);
+
+    await updateHabit(
+      mockRequest({ name: "Run" }, { id: "7" }),
+      mockResponse(),
+    );
+
+    const forwarded = vi.mocked(habitService.updateHabit).mock.calls[0][0];
+    expect(forwarded).not.toHaveProperty("period");
+  });
+
+  it("returns 400 for a period validation Error", async () => {
+    vi.mocked(habitService.updateHabit).mockRejectedValue(
+      new Error("period must be at least 1 hour"),
+    );
+
+    const res = mockResponse();
+    await updateHabit(mockRequest({ period: 0 }, { id: "7" }), res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({
+      error: "period must be at least 1 hour",
+    });
   });
 
   it("returns 404 when the habit is not found", async () => {

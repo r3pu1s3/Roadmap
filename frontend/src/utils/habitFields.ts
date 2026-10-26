@@ -78,3 +78,72 @@ export function splitDuration(totalMinutes: number): {
     minutes: totalMinutes % 60,
   };
 }
+
+// Mirrors MAX_PERIOD_HOURS in HabitService (365.25 days), kept in sync by
+// hand like the limits above.
+export const MAX_PERIOD_HOURS = 8766;
+
+/**
+ * A habit's period as the API sends it: a named calendar period, a custom
+ * number of hours, or null for a one-time habit. Same name as the backend's
+ * union; not the backend's Prisma enum `HabitPeriod` (presets only).
+ */
+export type HabitPeriodValue =
+  "daily" | "weekly" | "monthly" | "yearly" | number | null;
+
+/** The period select's options; "custom" means the Hours field is used. */
+export type PeriodChoice =
+  "none" | "daily" | "weekly" | "monthly" | "yearly" | "custom";
+
+// A plain decimal as typed into the Hours field (optional minus sign so a
+// negative reads as "under 1" rather than "not a number").
+const DECIMAL = /^-?\d+(\.\d+)?$/;
+
+const PERIOD_LABELS = {
+  daily: "Daily",
+  weekly: "Weekly",
+  monthly: "Monthly",
+  yearly: "Yearly",
+} as const;
+
+/**
+ * Converts the period select and Hours field into the API's period, or an
+ * error message. Custom with empty hours means no period (one-time).
+ */
+export function parsePeriod(
+  choice: PeriodChoice,
+  hours: string,
+): { period: HabitPeriodValue } | { error: string } {
+  if (choice === "none") return { period: null };
+  if (choice !== "custom") return { period: choice };
+
+  const hoursText = hours.trim();
+  if (hoursText === "") return { period: null };
+  if (!DECIMAL.test(hoursText)) return { error: "Hours must be a number" };
+
+  const value = Number(hoursText);
+  if (value < 1) return { error: "Hours must be at least 1" };
+  if (value > MAX_PERIOD_HOURS) {
+    return { error: `Hours must be ${MAX_PERIOD_HOURS} or fewer` };
+  }
+  return { period: value };
+}
+
+/** Splits a saved period into the select choice and Hours text for editing. */
+export function periodToFields(period: HabitPeriodValue): {
+  choice: PeriodChoice;
+  hours: string;
+} {
+  if (period === null) return { choice: "none", hours: "" };
+  if (typeof period === "number") {
+    return { choice: "custom", hours: String(period) };
+  }
+  return { choice: period, hours: "" };
+}
+
+/** Formats a period for display, e.g. "Weekly", "Every 36 h" or "One-time". */
+export function formatPeriod(period: HabitPeriodValue): string {
+  if (period === null) return "One-time";
+  if (typeof period === "number") return `Every ${period} h`;
+  return PERIOD_LABELS[period];
+}

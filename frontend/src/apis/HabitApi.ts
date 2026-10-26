@@ -1,9 +1,15 @@
+import type { HabitPeriodValue } from "../utils/habitFields";
+
+export type { HabitPeriodValue };
+
 export interface HabitResponse {
   id: number;
   name: string;
   // null when the habit has no description
   description: string | null;
   durationMinutes: number;
+  // null when the habit is one-time
+  period: HabitPeriodValue;
 }
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
@@ -25,6 +31,7 @@ export async function createHabit(payload: {
   name: string;
   description: string | null;
   durationMinutes: number;
+  period: HabitPeriodValue;
 }): Promise<HabitResponse> {
   const response = await fetch(`${API_BASE}/habits`, {
     method: "POST",
@@ -61,6 +68,7 @@ export async function updateHabit(
     name?: string;
     description?: string | null;
     durationMinutes?: number;
+    period?: HabitPeriodValue;
   },
 ): Promise<HabitResponse> {
   const response = await fetch(`${API_BASE}/habits/${id}`, {

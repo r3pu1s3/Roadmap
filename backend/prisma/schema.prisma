@@ -63,13 +63,24 @@ model ObjectiveCounter {
   @@unique([objectiveId, label]) // one counter per unique placeholder name, per objective
 }
 
+enum HabitPeriod {
+  daily
+  weekly
+  monthly
+  yearly
+}
+
 // A reusable block of time spent on one activity. Standalone: it has no
 // relation to Map/Objective in this feature. The limits (name ≤ 100
 // characters, description ≤ 280 characters, 1 ≤ durationMinutes ≤ 1440)
 // are enforced in HabitService, not in the database.
 model Habit {
-  id              Int     @id @default(autoincrement())
+  id              Int          @id @default(autoincrement())
   name            String
   description     String?
   durationMinutes Int
+  // At most one of these is set; both null = one-time. Enforced in
+  // HabitService (custom hours: 1 ≤ value ≤ 8766, fractions allowed).
+  periodPreset    HabitPeriod?
+  periodHours     Float?
 }

@@ -1,15 +1,16 @@
 import { Request, Response } from "express";
 import * as habitService from "../services/HabitService";
 
-// POST /habits — create a habit. Only the three habit fields are forwarded;
+// POST /habits — create a habit. Only the four habit fields are forwarded;
 // any other keys in the body (e.g. an `id`) are dropped here.
 export async function createHabit(req: Request, res: Response) {
   try {
-    const { name, description, durationMinutes } = req.body;
+    const { name, description, durationMinutes, period } = req.body;
     const habit = await habitService.createHabit({
       name,
       description,
       durationMinutes,
+      period,
     });
     res.status(201).json(habit);
   } catch (err) {
@@ -68,9 +69,14 @@ export async function updateHabit(req: Request, res: Response) {
     // Express 5 leaves req.body undefined when no JSON body was sent.
     const body = req.body ?? {};
     const fields: Partial<
-      Record<"name" | "description" | "durationMinutes", unknown>
+      Record<"name" | "description" | "durationMinutes" | "period", unknown>
     > = {};
-    for (const key of ["name", "description", "durationMinutes"] as const) {
+    for (const key of [
+      "name",
+      "description",
+      "durationMinutes",
+      "period",
+    ] as const) {
       if (key in body) fields[key] = body[key];
     }
 

@@ -2,18 +2,23 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { createHabit } from "../apis/HabitApi";
 import HabitDurationInput from "../components/HabitDurationInput";
+import HabitPeriodInput from "../components/HabitPeriodInput";
 import {
   formatDuration,
+  formatPeriod,
   parseDuration,
+  parsePeriod,
   validateDescription,
   validateName,
+  type PeriodChoice,
 } from "../utils/habitFields";
 import "./HabitForm.css";
 
-type Step = 1 | 2 | 3;
+type Step = 1 | 2 | 3 | 4;
 
 /**
- * The habit creation flow (/habits/new): Details → Length of time → Review.
+ * The habit creation flow (/habits/new): Details → Length of time → Period →
+ * Review.
  * Every value lives in this one component's state, so Back never loses input
  * and leaving the page (Cancel) simply discards it — no prompt, by design.
  */
@@ -25,6 +30,8 @@ export default function HabitCreate() {
   const [description, setDescription] = useState("");
   const [hours, setHours] = useState("");
   const [minutes, setMinutes] = useState("");
+  const [periodChoice, setPeriodChoice] = useState<PeriodChoice>("none");
+  const [periodHours, setPeriodHours] = useState("");
   const [stepError, setStepError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -37,6 +44,10 @@ export default function HabitCreate() {
     if (stepToCheck === 2) {
       const duration = parseDuration(hours, minutes);
       return "error" in duration ? duration.error : null;
+    }
+    if (stepToCheck === 3) {
+      const period = parsePeriod(periodChoice, periodHours);
+      return "error" in period ? period.error : null;
     }
     return null;
   }
@@ -61,10 +72,11 @@ export default function HabitCreate() {
     if (isSaving) return;
 
     // Re-check everything before saving, not just the current step (FR-007).
-    const error = validateStep(1) ?? validateStep(2);
+    const error = validateStep(1) ?? validateStep(2) ?? validateStep(3);
     const duration = parseDuration(hours, minutes);
-    if (error || "error" in duration) {
-      setSaveError(error ?? "Invalid length of time");
+    const period = parsePeriod(periodChoice, periodHours);
+    if (error || "error" in duration || "error" in period) {
+      setSaveError(error ?? "Invalid length of time or period");
       return;
     }
 
@@ -76,6 +88,7 @@ export default function HabitCreate() {
         name: name.trim(),
         description: description.trim() || null,
         durationMinutes: duration.minutes,
+        period: period.period,
       });
       navigate("/habits");
     } catch (err) {
@@ -87,12 +100,13 @@ export default function HabitCreate() {
   }
 
   const reviewDuration = parseDuration(hours, minutes);
+  const reviewPeriod = parsePeriod(periodChoice, periodHours);
 
   return (
     <div className="habit-form-page">
       <div className="habit-form-card">
         <h1 className="habit-form-title">New habit</h1>
-        <p className="habit-form-subtitle">Step {step} of 3</p>
+        <p className="habit-form-subtitle">Step {step} of 4</p>
 
         {step === 1 && (
           <>
@@ -137,6 +151,18 @@ export default function HabitCreate() {
         )}
 
         {step === 3 && (
+          // HabitPeriodInput labels its own "Period" select, so no page label.
+          <HabitPeriodInput
+            choice={periodChoice}
+            hours={periodHours}
+            onChange={(next) => {
+              setPeriodChoice(next.choice);
+              setPeriodHours(next.hours);
+            }}
+          />
+        )}
+
+        {step === 4 && (
           <dl className="habit-form-review">
             <dt className="habit-form-label">Name</dt>
             <dd className="habit-form-review-value">{name.trim()}</dd>
@@ -150,6 +176,10 @@ export default function HabitCreate() {
             <dd className="habit-form-review-value">
               {"minutes" in reviewDuration &&
                 formatDuration(reviewDuration.minutes)}
+            </dd>
+            <dt className="habit-form-label">Period</dt>
+            <dd className="habit-form-review-value">
+              {"period" in reviewPeriod && formatPeriod(reviewPeriod.period)}
             </dd>
           </dl>
         )}
@@ -175,7 +205,7 @@ export default function HabitCreate() {
               Back
             </button>
           )}
-          {step < 3 ? (
+          {step < 4 ? (
             <button
               type="button"
               className="habit-form-btn habit-form-btn-primary"

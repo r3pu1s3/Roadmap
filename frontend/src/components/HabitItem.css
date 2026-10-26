@@ -25,8 +25,16 @@
   text-overflow: ellipsis;
 }
 
-.habit-item-duration {
+/* Duration and period sit together on the right; flex-shrink: 0 keeps them
+   whole so a long name truncates instead. */
+.habit-item-meta {
+  display: flex;
+  gap: 8px;
   flex-shrink: 0;
+}
+
+.habit-item-duration,
+.habit-item-period {
   font-size: 13px;
   color: #a3a3a3;
 }

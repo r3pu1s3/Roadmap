@@ -11,9 +11,15 @@ const mockedGetHabits = vi.mocked(getHabits);
 // Deliberately not alphabetical: the page must keep the API's order (the
 // backend owns sorting), not re-sort.
 const habits: HabitResponse[] = [
-  { id: 3, name: "Read", description: null, durationMinutes: 30 },
-  { id: 1, name: "Meditate", description: "Breathing", durationMinutes: 15 },
-  { id: 2, name: "Run", description: null, durationMinutes: 75 },
+  { id: 3, name: "Read", description: null, durationMinutes: 30, period: null },
+  {
+    id: 1,
+    name: "Meditate",
+    description: "Breathing",
+    durationMinutes: 15,
+    period: null,
+  },
+  { id: 2, name: "Run", description: null, durationMinutes: 75, period: null },
 ];
 
 function renderList() {

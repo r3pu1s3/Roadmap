@@ -2,11 +2,15 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { deleteHabit, getHabit, updateHabit } from "../apis/HabitApi";
 import HabitDurationInput from "../components/HabitDurationInput";
+import HabitPeriodInput from "../components/HabitPeriodInput";
 import {
   parseDuration,
+  parsePeriod,
+  periodToFields,
   splitDuration,
   validateDescription,
   validateName,
+  type PeriodChoice,
 } from "../utils/habitFields";
 import "./HabitForm.css";
 
@@ -16,9 +20,9 @@ type LoadState =
   | { status: "loaded" };
 
 /**
- * The habit update page (/habits/:habitId): one form with Name, Description
- * and Length of time sections. Save sends all three fields and returns to the
- * list; Cancel discards edits without a prompt, by design. A Delete button at
+ * The habit update page (/habits/:habitId): one form with Name, Description,
+ * Length of time and Period sections. Save sends every field and returns to
+ * the list; Cancel discards edits without a prompt, by design. A Delete button at
  * the very bottom permanently deletes the habit after an inline confirmation.
  */
 export default function HabitEdit() {
@@ -30,6 +34,8 @@ export default function HabitEdit() {
   const [description, setDescription] = useState("");
   const [hours, setHours] = useState("");
   const [minutes, setMinutes] = useState("");
+  const [periodChoice, setPeriodChoice] = useState<PeriodChoice>("none");
+  const [periodHours, setPeriodHours] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   // Deletion is a two-step inline confirm (research R8) rather than
@@ -45,10 +51,13 @@ export default function HabitEdit() {
       .then((habit) => {
         if (cancelled) return;
         const split = splitDuration(habit.durationMinutes);
+        const period = periodToFields(habit.period);
         setName(habit.name);
         setDescription(habit.description ?? "");
         setHours(String(split.hours));
         setMinutes(String(split.minutes));
+        setPeriodChoice(period.choice);
+        setPeriodHours(period.hours);
         setLoadState({ status: "loaded" });
       })
       .catch((err: unknown) => {
@@ -72,11 +81,13 @@ export default function HabitEdit() {
     if (isSaving) return;
 
     const duration = parseDuration(hours, minutes);
+    const period = parsePeriod(periodChoice, periodHours);
     const error =
       validateName(name) ??
       validateDescription(description) ??
-      ("error" in duration ? duration.error : null);
-    if (error || "error" in duration) {
+      ("error" in duration ? duration.error : null) ??
+      ("error" in period ? period.error : null);
+    if (error || "error" in duration || "error" in period) {
       setFormError(error);
       return;
     }
@@ -89,6 +100,7 @@ export default function HabitEdit() {
         name: name.trim(),
         description: description.trim() || null,
         durationMinutes: duration.minutes,
+        period: period.period,
       });
       navigate("/habits");
     } catch (err) {
@@ -175,6 +187,18 @@ export default function HabitEdit() {
             onChange={(next) => {
               setHours(next.hours);
               setMinutes(next.minutes);
+            }}
+          />
+        </section>
+
+        <section className="habit-form-section">
+          {/* HabitPeriodInput labels its own "Period" select. */}
+          <HabitPeriodInput
+            choice={periodChoice}
+            hours={periodHours}
+            onChange={(next) => {
+              setPeriodChoice(next.choice);
+              setPeriodHours(next.hours);
             }}
           />
         </section>

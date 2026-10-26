@@ -5,6 +5,10 @@ import {
   parseDuration,
   formatDuration,
   splitDuration,
+  MAX_PERIOD_HOURS,
+  parsePeriod,
+  periodToFields,
+  formatPeriod,
 } from "../../../utils/habitFields";
 
 describe("validateName", () => {
@@ -140,5 +144,106 @@ describe("splitDuration", () => {
 
   it("returns zero hours under an hour", () => {
     expect(splitDuration(45)).toEqual({ hours: 0, minutes: 45 });
+  });
+});
+
+describe("MAX_PERIOD_HOURS", () => {
+  it("is 8766 (365.25 days)", () => {
+    expect(MAX_PERIOD_HOURS).toBe(8766);
+  });
+});
+
+describe("parsePeriod", () => {
+  it("returns no period for None", () => {
+    expect(parsePeriod("none", "")).toEqual({ period: null });
+  });
+
+  it("ignores typed hours unless the choice is Custom", () => {
+    expect(parsePeriod("none", "5")).toEqual({ period: null });
+    expect(parsePeriod("weekly", "abc")).toEqual({ period: "weekly" });
+  });
+
+  it.each(["daily", "weekly", "monthly", "yearly"] as const)(
+    "returns the %s preset",
+    (preset) => {
+      expect(parsePeriod(preset, "")).toEqual({ period: preset });
+    },
+  );
+
+  it.each(["", "   "])(
+    "treats Custom with empty hours (%j) as no period",
+    (hours) => {
+      expect(parsePeriod("custom", hours)).toEqual({ period: null });
+    },
+  );
+
+  it("returns custom hours as a number, fractions allowed", () => {
+    expect(parsePeriod("custom", "36")).toEqual({ period: 36 });
+    expect(parsePeriod("custom", "1.5")).toEqual({ period: 1.5 });
+  });
+
+  it("trims surrounding whitespace from custom hours", () => {
+    expect(parsePeriod("custom", " 2 ")).toEqual({ period: 2 });
+  });
+
+  it("accepts the boundaries 1 and 8766", () => {
+    expect(parsePeriod("custom", "1")).toEqual({ period: 1 });
+    expect(parsePeriod("custom", "8766")).toEqual({ period: 8766 });
+  });
+
+  it.each(["0", "0.5", "-1"])("rejects %s hours as under 1", (hours) => {
+    expect(parsePeriod("custom", hours)).toEqual({
+      error: "Hours must be at least 1",
+    });
+  });
+
+  it.each(["8766.5", "10000"])("rejects %s hours as over 8766", (hours) => {
+    expect(parsePeriod("custom", hours)).toEqual({
+      error: "Hours must be 8766 or fewer",
+    });
+  });
+
+  it.each(["abc", "1e3", ".5"])("rejects %j as not a number", (hours) => {
+    expect(parsePeriod("custom", hours)).toEqual({
+      error: "Hours must be a number",
+    });
+  });
+});
+
+describe("periodToFields", () => {
+  it("maps no period to None with empty hours", () => {
+    expect(periodToFields(null)).toEqual({ choice: "none", hours: "" });
+  });
+
+  it("maps a preset to that choice with empty hours", () => {
+    expect(periodToFields("monthly")).toEqual({ choice: "monthly", hours: "" });
+  });
+
+  it("maps custom hours to Custom with the hours as text", () => {
+    expect(periodToFields(36.5)).toEqual({ choice: "custom", hours: "36.5" });
+  });
+});
+
+describe("formatPeriod", () => {
+  it("shows no period as One-time", () => {
+    expect(formatPeriod(null)).toBe("One-time");
+  });
+
+  it.each([
+    ["daily", "Daily"],
+    ["weekly", "Weekly"],
+    ["monthly", "Monthly"],
+    ["yearly", "Yearly"],
+  ] as const)("shows %s as %s", (preset, label) => {
+    expect(formatPeriod(preset)).toBe(label);
+  });
+
+  it("shows custom hours exactly as stored", () => {
+    expect(formatPeriod(36)).toBe("Every 36 h");
+    expect(formatPeriod(1.5)).toBe("Every 1.5 h");
+  });
+
+  it("never converts large custom hours to days", () => {
+    expect(formatPeriod(720)).toBe("Every 720 h");
   });
 });

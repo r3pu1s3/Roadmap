@@ -1,10 +1,18 @@
 import prisma from "../lib/prisma";
-import { Habit } from "../generated/prisma/client";
+import { Habit, HabitPeriod } from "../generated/prisma/client";
 
 const NAME_CHAR_LIMIT = 100;
 const DESCRIPTION_CHAR_LIMIT = 280;
 const MIN_DURATION_MINUTES = 1;
 const MAX_DURATION_MINUTES = 1440; // 24 hours
+const MIN_PERIOD_HOURS = 1;
+const MAX_PERIOD_HOURS = 8766; // 365.25 days
+const PERIOD_PRESETS: readonly string[] = [
+  "daily",
+  "weekly",
+  "monthly",
+  "yearly",
+];
 
 // Inputs arrive straight from the request body, so they're typed `unknown`
 // and every validator does its own runtime type check (research R5).
@@ -76,22 +84,82 @@ function validateDurationMinutes(durationMinutes: unknown): number {
   return durationMinutes;
 }
 
+// Turns the API's single `period` value into the two period columns, or
+// throws. undefined/null → one-time (both null). It always returns both
+// columns, so every write keeps "at most one set" without a separate check
+// (research P5). Numeric strings like "36" are rejected, not coerced.
+function validatePeriod(period: unknown): {
+  periodPreset: HabitPeriod | null;
+  periodHours: number | null;
+} {
+  if (period === undefined || period === null) {
+    return { periodPreset: null, periodHours: null };
+  }
+  if (typeof period === "string" && PERIOD_PRESETS.includes(period)) {
+    return { periodPreset: period as HabitPeriod, periodHours: null };
+  }
+  if (typeof period === "number" && Number.isFinite(period)) {
+    if (period < MIN_PERIOD_HOURS) {
+      throw new Error(`period must be at least ${MIN_PERIOD_HOURS} hour`);
+    }
+    if (period > MAX_PERIOD_HOURS) {
+      throw new Error(`period must be ${MAX_PERIOD_HOURS} hours or fewer`);
+    }
+    return { periodPreset: null, periodHours: period };
+  }
+  throw new Error(
+    "period must be one of daily, weekly, monthly, yearly, or a number of hours",
+  );
+}
+
+// A habit's period as the API sends it: a named calendar period, a custom
+// number of hours, or null for a one-time habit.
+export type HabitPeriodValue =
+  "daily" | "weekly" | "monthly" | "yearly" | number | null;
+
+// The habit shape every service function returns and the API responds with.
+export interface HabitResponse {
+  id: number;
+  name: string;
+  description: string | null;
+  durationMinutes: number;
+  period: HabitPeriodValue;
+}
+
+// The API exposes one `period` field, but it's stored in two typed columns
+// (periodPreset / periodHours, at most one set) so the database checks both
+// halves (research P1, P6). The raw columns never leave the service.
+function toHabitResponse(row: Habit): HabitResponse {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    durationMinutes: row.durationMinutes,
+    period: row.periodPreset ?? row.periodHours ?? null,
+  };
+}
+
 export interface CreateHabitInput {
   name: unknown;
   description?: unknown;
   durationMinutes: unknown;
+  period?: unknown;
 }
 
 // Creates a habit after validating every field. Checks run name →
-// description → durationMinutes, and the first failure is thrown.
-export async function createHabit(data: CreateHabitInput): Promise<Habit> {
+// description → durationMinutes → period, and the first failure is thrown.
+export async function createHabit(
+  data: CreateHabitInput,
+): Promise<HabitResponse> {
   const name = validateName(data.name);
   const description = validateDescription(data.description);
   const durationMinutes = validateDurationMinutes(data.durationMinutes);
+  const period = validatePeriod(data.period);
 
-  return prisma.habit.create({
-    data: { name, description, durationMinutes },
+  const created = await prisma.habit.create({
+    data: { name, description, durationMinutes, ...period },
   });
+  return toHabitResponse(created);
 }
 
 // Lists every habit for the habits page, alphabetically by name (ignoring
@@ -99,15 +167,17 @@ export async function createHabit(data: CreateHabitInput): Promise<Habit> {
 // case-insensitively on PostgreSQL without raw SQL, so we fetch in id order
 // (autoincrement id = creation order) and sort in memory — Array.sort is
 // stable, so equal names keep that id order. Fine at the expected ~100 rows.
-export async function getHabits(): Promise<Habit[]> {
+export async function getHabits(): Promise<HabitResponse[]> {
   const habits = await prisma.habit.findMany({ orderBy: { id: "asc" } });
-  return habits.sort((a, b) =>
-    a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
-  );
+  return habits
+    .sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+    )
+    .map(toHabitResponse);
 }
 
 // Fetches one habit by id for the update page.
-export async function getHabit(id: number): Promise<Habit> {
+export async function getHabit(id: number): Promise<HabitResponse> {
   if (!Number.isInteger(id)) {
     throw new Error("id must be a valid integer");
   }
@@ -116,7 +186,7 @@ export async function getHabit(id: number): Promise<Habit> {
   if (!habit) {
     throw new Error("habit not found");
   }
-  return habit;
+  return toHabitResponse(habit);
 }
 
 export interface UpdateHabitInput {
@@ -124,13 +194,18 @@ export interface UpdateHabitInput {
   name?: unknown;
   description?: unknown;
   durationMinutes?: unknown;
+  period?: unknown;
 }
 
 // Partial update: a field that is absent (undefined) is left unchanged; a
 // field that is present goes through the same validators as createHabit.
-// description: null (or blank) clears the description. Existence is checked
-// before any field, mirroring MapService.updateMap (research R4).
-export async function updateHabit(data: UpdateHabitInput): Promise<Habit> {
+// description: null (or blank) clears the description, and period: null
+// makes the habit one-time; a preset or number replaces whichever period
+// column was set before. Existence is checked before any field, mirroring
+// MapService.updateMap (research R4).
+export async function updateHabit(
+  data: UpdateHabitInput,
+): Promise<HabitResponse> {
   const { id } = data;
 
   if (!Number.isInteger(id)) {
@@ -146,6 +221,8 @@ export async function updateHabit(data: UpdateHabitInput): Promise<Habit> {
     name?: string;
     description?: string | null;
     durationMinutes?: number;
+    periodPreset?: HabitPeriod | null;
+    periodHours?: number | null;
   } = {};
   if (data.name !== undefined) {
     changes.name = validateName(data.name);
@@ -156,13 +233,17 @@ export async function updateHabit(data: UpdateHabitInput): Promise<Habit> {
   if (data.durationMinutes !== undefined) {
     changes.durationMinutes = validateDurationMinutes(data.durationMinutes);
   }
+  if (data.period !== undefined) {
+    Object.assign(changes, validatePeriod(data.period));
+  }
 
-  return prisma.habit.update({ where: { id }, data: changes });
+  const updated = await prisma.habit.update({ where: { id }, data: changes });
+  return toHabitResponse(updated);
 }
 
 // Permanently deletes a habit (no archive/undo) and returns the deleted row,
 // mirroring ObjectiveEdgeService.deleteObjectiveEdge.
-export async function deleteHabit(id: number): Promise<Habit> {
+export async function deleteHabit(id: number): Promise<HabitResponse> {
   if (!Number.isInteger(id)) {
     throw new Error("id must be a valid integer");
   }
@@ -172,5 +253,6 @@ export async function deleteHabit(id: number): Promise<Habit> {
     throw new Error("habit not found");
   }
 
-  return prisma.habit.delete({ where: { id } });
+  const deleted = await prisma.habit.delete({ where: { id } });
+  return toHabitResponse(deleted);
 }

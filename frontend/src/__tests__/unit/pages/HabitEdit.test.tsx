@@ -42,6 +42,7 @@ const habit: HabitResponse = {
   name: "Morning run",
   description: "Easy pace",
   durationMinutes: 75,
+  period: null,
 };
 
 function renderEdit() {
@@ -130,7 +131,7 @@ describe("HabitEdit", () => {
 
   // --- save ---
 
-  it("saves all three fields, trimmed, then returns to /habits", async () => {
+  it("saves every field, trimmed, then returns to /habits", async () => {
     mockedUpdateHabit.mockResolvedValue(habit);
     const user = userEvent.setup();
     await renderLoaded();
@@ -147,6 +148,7 @@ describe("HabitEdit", () => {
       name: "Evening run",
       description: "Easy pace",
       durationMinutes: 90,
+      period: null,
     });
     expect(mockNavigate).toHaveBeenCalledWith("/habits");
   });
@@ -163,6 +165,7 @@ describe("HabitEdit", () => {
       name: "Morning run",
       description: null,
       durationMinutes: 75,
+      period: null,
     });
   });
 
@@ -180,6 +183,87 @@ describe("HabitEdit", () => {
     expect(mockedUpdateHabit).toHaveBeenCalledTimes(1);
 
     deferred.resolve(habit);
+  });
+
+  // --- period ---
+
+  it("shows None and no period Hours field for a one-time habit", async () => {
+    await renderLoaded({ ...habit, period: null });
+
+    expect(screen.getByLabelText("Period")).toHaveValue("none");
+    expect(screen.queryByLabelText("Period hours")).not.toBeInTheDocument();
+  });
+
+  it("shows a preset period selected, with no period Hours field", async () => {
+    await renderLoaded({ ...habit, period: "weekly" });
+
+    expect(screen.getByLabelText("Period")).toHaveValue("weekly");
+    expect(screen.queryByLabelText("Period hours")).not.toBeInTheDocument();
+  });
+
+  it("shows Custom with the hours filled in for a custom period", async () => {
+    await renderLoaded({ ...habit, period: 36.5 });
+
+    expect(screen.getByLabelText("Period")).toHaveValue("custom");
+    expect(screen.getByLabelText("Period hours")).toHaveValue(36.5);
+  });
+
+  it("saves a changed period, then returns to /habits", async () => {
+    mockedUpdateHabit.mockResolvedValue(habit);
+    const user = userEvent.setup();
+    await renderLoaded({ ...habit, period: "weekly" });
+
+    await user.selectOptions(screen.getByLabelText("Period"), "monthly");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(mockedUpdateHabit).toHaveBeenCalledWith(
+      7,
+      expect.objectContaining({ period: "monthly" }),
+    );
+    expect(mockNavigate).toHaveBeenCalledWith("/habits");
+  });
+
+  it("saves custom hours typed into the period Hours field", async () => {
+    mockedUpdateHabit.mockResolvedValue(habit);
+    const user = userEvent.setup();
+    await renderLoaded({ ...habit, period: "daily" });
+
+    await user.selectOptions(screen.getByLabelText("Period"), "custom");
+    await user.type(screen.getByLabelText("Period hours"), "12");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(mockedUpdateHabit).toHaveBeenCalledWith(
+      7,
+      expect.objectContaining({ period: 12 }),
+    );
+  });
+
+  it("sends period: null when changed to None", async () => {
+    mockedUpdateHabit.mockResolvedValue(habit);
+    const user = userEvent.setup();
+    await renderLoaded({ ...habit, period: "weekly" });
+
+    await user.selectOptions(screen.getByLabelText("Period"), "none");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(mockedUpdateHabit).toHaveBeenCalledWith(
+      7,
+      expect.objectContaining({ period: null }),
+    );
+  });
+
+  it("sends period: null when the custom hours are cleared", async () => {
+    mockedUpdateHabit.mockResolvedValue(habit);
+    const user = userEvent.setup();
+    await renderLoaded({ ...habit, period: 36.5 });
+
+    await user.clear(screen.getByLabelText("Period hours"));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(mockedUpdateHabit).toHaveBeenCalledWith(
+      7,
+      expect.objectContaining({ period: null }),
+    );
   });
 
   // --- validation ---
@@ -206,6 +290,19 @@ describe("HabitEdit", () => {
     expect(
       screen.getByText("Length of time must be at least 1 minute"),
     ).toBeInTheDocument();
+    expect(mockedUpdateHabit).not.toHaveBeenCalled();
+  });
+
+  it("shows the period error and does not save for custom hours under 1", async () => {
+    const user = userEvent.setup();
+    await renderLoaded({ ...habit, period: 36.5 });
+
+    const hours = screen.getByLabelText("Period hours");
+    await user.clear(hours);
+    await user.type(hours, "0.5");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(screen.getByText("Hours must be at least 1")).toBeInTheDocument();
     expect(mockedUpdateHabit).not.toHaveBeenCalled();
   });
 
